@@ -280,12 +280,17 @@ async function handleLogin(e) {
   const pw         = document.getElementById('login-pw').value;
   const rememberMe = document.getElementById('login-remember')?.checked ?? true;
   setAuthLoading('form-login', true);
-  const { error } = await sb.auth.signInWithPassword({ email, password: pw });
-  setAuthLoading('form-login', false);
-  if (error) { showAuthError('form-login', error.message); return; }
-  if (rememberMe) localStorage.removeItem('formelpp_no_remember');
-  else            localStorage.setItem('formelpp_no_remember', '1');
-  hideAuthModal();
+  try {
+    const { error } = await sb.auth.signInWithPassword({ email, password: pw });
+    if (error) { showAuthError('form-login', error.message); return; }
+    if (rememberMe) localStorage.removeItem('formelpp_no_remember');
+    else            localStorage.setItem('formelpp_no_remember', '1');
+    hideAuthModal();
+  } catch (err) {
+    showAuthError('form-login', 'Verbindungsfehler — bitte nochmals versuchen.');
+  } finally {
+    setAuthLoading('form-login', false);
+  }
 }
 
 async function handleSignup(e) {
@@ -294,10 +299,15 @@ async function handleSignup(e) {
   const email = document.getElementById('signup-email').value.trim();
   const pw    = document.getElementById('signup-pw').value;
   setAuthLoading('form-signup', true);
-  const { error } = await sb.auth.signUp({ email, password: pw });
-  setAuthLoading('form-signup', false);
-  if (error) { showAuthError('form-signup', error.message); return; }
-  document.getElementById('signup-success').classList.remove('hidden');
+  try {
+    const { error } = await sb.auth.signUp({ email, password: pw });
+    if (error) { showAuthError('form-signup', error.message); return; }
+    document.getElementById('signup-success').classList.remove('hidden');
+  } catch (err) {
+    showAuthError('form-signup', 'Verbindungsfehler — bitte nochmals versuchen.');
+  } finally {
+    setAuthLoading('form-signup', false);
+  }
 }
 
 async function handleLogout() {
