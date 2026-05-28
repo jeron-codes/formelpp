@@ -958,11 +958,24 @@ body.light-mode .calc-material-sel {
 
 /* ── Responsive / Mobile ──────────────────────────── */
 @media (max-width: 768px) {
+  /* Flex-Layout: verhindert dass die untere Leiste beim Zoomen wegdriftet */
+  body {
+    display: flex; flex-direction: column;
+    height: 100vh; height: 100dvh;
+    overflow: hidden;
+  }
+  #main {
+    order: 1; flex: 1; min-height: 0;
+    overflow-y: auto; -webkit-overflow-scrolling: touch;
+    margin-left: 0; padding-bottom: 10px;
+  }
   #sidebar {
+    order: 2; flex-shrink: 0;
     width: 100%; min-height: auto;
-    position: fixed; bottom: 0; top: auto;
+    position: static;
     border-right: none; border-top: 1px solid var(--border);
     flex-direction: row; padding: 0; overflow-x: auto;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
   #sidebar .logo        { display: none; }
   #sidebar .nav-section { display: none; }
@@ -976,8 +989,6 @@ body.light-mode .calc-material-sel {
   #sidebar nav a .nav-icon { width: 20px; height: 20px; opacity: .6; }
   #sidebar nav a.active .nav-icon { opacity: 1; }
   .user-section { display: none; }
-
-  #main { margin-left: 0; padding-bottom: 70px; }
 
   .hero            { padding: 32px 20px 28px; }
   .hero-title      { font-size: 2.2rem; }
