@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Formel++</title>
+
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#07071A">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Formel++">
+  <link rel="apple-touch-icon" href="icon.svg">
+
+  <!-- KaTeX -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+
+  <!-- Supabase -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ── Start Screen ─────────────────────────────────── -->
+<div id="start-screen" class="start-screen">
+  <div class="start-glow math"></div>
+  <div class="start-glow phys"></div>
+  <div class="start-glow elek"></div>
+  <div class="start-content">
+    <h1 class="start-title">Formel++</h1>
+    <p class="start-tagline">Deine Formelsammlung für die Lehre</p>
+    <p class="start-subjects">Physik · Mathematik · Elektrotechnik</p>
+    <div class="start-btns">
+      <button id="start-login-btn"  class="start-btn primary"><svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg> Anmelden</button>
+      <button id="start-signup-btn" class="start-btn secondary">Registrieren</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Onboarding Modal ──────────────────────────────── -->
+<div id="onboarding-overlay" class="onboarding-overlay hidden">
+  <div class="onboarding-modal">
+    <div class="onboarding-title">Willkommen bei Formel++</div>
+    <div class="onboarding-sub">Passe die App kurz an — du kannst das jederzeit in den Einstellungen ändern.</div>
+
+    <div class="onboarding-section">
+      <div class="onboarding-label">Design</div>
+      <div class="theme-choice" id="ob-theme-choice">
+        <button class="theme-choice-btn active" data-theme="dark"><svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg> Dunkel</button>
+        <button class="theme-choice-btn" data-theme="light"><svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg> Hell</button>
+      </div>
+    </div>
+
+    <div class="onboarding-section">
+      <div class="onboarding-label">Signifikante Stellen im Rechner</div>
+      <div class="sigfigs-choice" id="ob-sf-choice">
+        <button class="sf-btn" data-sf="2">2</button>
+        <button class="sf-btn active" data-sf="3">3</button>
+        <button class="sf-btn" data-sf="4">4</button>
+        <button class="sf-btn" data-sf="5">5</button>
+      </div>
+    </div>
+
+    <button class="onboarding-done-btn" id="onboarding-done">Los geht's →</button>
+  </div>
+</div>
+
+<!-- ── PDF Size Picker ───────────────────────────────── -->
+<div id="pdf-picker-overlay" class="pdf-picker-overlay hidden">
+  <div class="pdf-picker-modal">
+    <div class="pdf-picker-title" id="pdf-picker-title">PDF erstellen</div>
+    <div class="pdf-size-options">
+      <label class="pdf-size-option">
+        <input type="radio" name="pdf-size" value="normal" checked>
+        <div class="pdf-size-card">
+          <div class="pdf-size-name">Normal</div>
+          <div class="pdf-size-desc">1 Spalte, grössere Schrift — gut lesbar zum Lernen</div>
+        </div>
+      </label>
+      <label class="pdf-size-option">
+        <input type="radio" name="pdf-size" value="compact">
+        <div class="pdf-size-card">
+          <div class="pdf-size-name">Kompakt</div>
+          <div class="pdf-size-desc">2 Spalten, kleiner Text — mehr Formeln pro Seite</div>
+        </div>
+      </label>
+    </div>
+    <div class="pdf-picker-btns">
+      <button class="pdf-create-btn" id="pdf-create-btn">PDF erstellen</button>
+      <button class="pdf-cancel-btn" id="pdf-cancel-btn">Abbrechen</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Auth Modal ──────────────────────────────────── -->
+<div id="auth-overlay" class="auth-overlay hidden">
+  <div class="auth-modal">
+    <button class="auth-close" id="auth-close">✕</button>
+    <h2 class="auth-title">Konto</h2>
+    <div class="auth-tabs">
+      <button class="auth-tab active" data-tab="login">Anmelden</button>
+      <button class="auth-tab" data-tab="signup">Registrieren</button>
+    </div>
+    <form id="form-login" class="auth-form">
+      <label>E-Mail</label>
+      <input type="email" id="login-email" placeholder="deine@email.com" required>
+      <label>Passwort</label>
+      <input type="password" id="login-pw" placeholder="Passwort" required>
+      <div class="auth-error hidden" id="login-error"></div>
+      <button type="submit" class="auth-submit">Anmelden</button>
+    </form>
+    <form id="form-signup" class="auth-form hidden">
+      <label>E-Mail</label>
+      <input type="email" id="signup-email" placeholder="deine@email.com" required>
+      <label>Passwort</label>
+      <input type="password" id="signup-pw" placeholder="Mindestens 6 Zeichen" required>
+      <div class="auth-error hidden" id="signup-error"></div>
+      <div class="auth-success hidden" id="signup-success">Konto erstellt! Du kannst dich jetzt anmelden.</div>
+      <button type="submit" class="auth-submit">Registrieren</button>
+    </form>
+  </div>
+</div>
+
+<!-- ── Setup Banner ───────────────────────────────── -->
+<div id="setup-banner" class="setup-banner hidden">
+  Supabase noch nicht konfiguriert — bitte <code>supabase-config.js</code> ausfüllen.
+</div>
+
+<!-- ── Sidebar ──────────────────────────────────────── -->
+<aside id="sidebar" style="display:none">
+  <div class="logo">
+    <h1>Formel++</h1>
+    <span>Physik · Mathe · Elektrotechnik</span>
+  </div>
+  <nav>
+    <div class="nav-section">Navigation</div>
+    <a data-view="home" class="active">
+      <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9,22 9,12 15,12 15,22"/></svg>
+      Übersicht
+    </a>
+    <a data-view="browse">
+      <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
+      Alle Formeln
+    </a>
+    <a data-view="favorites">
+      <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg>
+      Favoriten
+    </a>
+    <a data-view="quiz">
+      <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      Quiz
+    </a>
+    <a data-view="scan">
+      <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+      Scan
+    </a>
+    <a data-view="settings">
+      <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+      Einstellungen<span class="nav-badge hidden" id="admin-badge"></span>
+    </a>
+  </nav>
+  <div class="user-section" id="user-section">
+    <div id="user-loggedout">
+      <button class="user-login-btn" id="open-auth-btn"><svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg> Anmelden</button>
+      <p class="user-hint">Melde dich an um Favoriten geräteübergreifend zu speichern.</p>
+    </div>
+    <div id="user-loggedin" class="hidden">
+      <div class="user-avatar" id="user-avatar">?</div>
+      <div class="user-email" id="user-email"></div>
+      <button class="user-logout-btn" id="logout-btn">Abmelden</button>
+    </div>
+  </div>
+</aside>
+
+<!-- ── Main ─────────────────────────────────────────── -->
+<main id="main" style="display:none">
+
+  <!-- HOME -->
+  <section id="view-home" class="view active">
+    <div class="hero">
+      <div class="hero-glow math"></div>
+      <div class="hero-glow phys"></div>
+      <div class="hero-glow elek"></div>
+      <h1 class="hero-title">Formel++</h1>
+      <p class="hero-sub">Deine Formelsammlung für die <strong>Lehre</strong></p>
+      <div class="search-bar">
+        <span class="search-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
+        <input id="search-input" type="text" placeholder="Formel, Variable oder Stichwort suchen …">
+      </div>
+    </div>
+
+    <div class="cat-grid">
+      <div id="cat-mathematik" class="cat-card mathematik">
+        <span class="cat-icon">
+          <!-- Pi-Symbol / Mathematik -->
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="3" y1="7" x2="21" y2="7"/>
+            <path d="M7 7v10"/>
+            <path d="M15 7v7a3 3 0 003 3"/>
+          </svg>
+        </span>
+        <div class="cat-name">Mathematik</div>
+        <div class="cat-count">– Formeln</div>
+        <div class="cat-accent-bar"></div>
+      </div>
+      <div id="cat-physik" class="cat-card physik">
+        <span class="cat-icon">
+          <!-- Atom / Physik -->
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+            <circle cx="12" cy="12" r="2.2"/>
+            <ellipse cx="12" cy="12" rx="9.5" ry="4"/>
+            <ellipse cx="12" cy="12" rx="9.5" ry="4" transform="rotate(60 12 12)"/>
+            <ellipse cx="12" cy="12" rx="9.5" ry="4" transform="rotate(120 12 12)"/>
+          </svg>
+        </span>
+        <div class="cat-name">Physik</div>
+        <div class="cat-count">– Formeln</div>
+        <div class="cat-accent-bar"></div>
+      </div>
+      <div id="cat-elektro" class="cat-card elektro">
+        <span class="cat-icon">
+          <!-- Blitz / Elektrotechnik -->
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="13,2 3,14 12,14 11,22 21,10 12,10 13,2"/>
+          </svg>
+        </span>
+        <div class="cat-name">Elektrotechnik</div>
+        <div class="cat-count">– Formeln</div>
+        <div class="cat-accent-bar"></div>
+      </div>
+    </div>
+
+    <p class="tip-text">Variable anklicken → Formel wird automatisch umgeformt</p>
+  </section>
+
+  <!-- BROWSE -->
+  <section id="view-browse" class="view">
+    <div class="browse-header">
+      <button class="back-btn" id="back-btn">← Zurück</button>
+      <h2 id="browse-title" style="font-size:1.3rem;font-weight:800;"></h2>
+    </div>
+    <div id="formula-list" class="formula-list"></div>
+  </section>
+
+  <!-- DETAIL -->
+  <section id="view-detail" class="view">
+    <div class="detail-topbar">
+      <button class="back-btn" id="detail-back-btn">← Zurück</button>
+      <button class="fav-btn" id="fav-btn"><svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/></svg> Favorit</button>
+    </div>
+    <div class="detail-name" id="detail-name"></div>
+    <div class="detail-sub"  id="detail-sub"></div>
+    <div class="detail-desc" id="detail-desc"></div>
+    <p class="var-label">Variable auswählen zum Umformen:</p>
+    <div class="var-buttons" id="var-buttons"></div>
+    <div class="formula-display" id="formula-display"></div>
+    <div id="calculator-wrap" class="calculator-wrap"></div>
+    <p class="var-label" style="margin-top:16px;"><svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg> Zu Ordner hinzufügen:</p>
+    <div id="folder-btn-wrap" class="folder-btn-wrap"></div>
+    <div class="var-table-wrap">
+      <table class="var-table">
+        <thead><tr><th>Symbol</th><th>Bezeichnung</th><th>Einheit</th></tr></thead>
+        <tbody id="var-tbody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- FAVORITES -->
+  <section id="view-favorites" class="view">
+    <div class="page-header">
+      <div class="page-title">Favoriten</div>
+      <div class="page-sub">Deine gespeicherten Formeln.</div>
+    </div>
+    <div class="fav-content" id="fav-list"></div>
+  </section>
+
+  <!-- QUIZ -->
+  <section id="view-quiz" class="view">
+    <div class="quiz-header">
+      <div class="page-title">Quiz</div>
+      <div class="page-sub">Lerne und teste Formeln.</div>
+    </div>
+
+    <div id="quiz-setup" class="quiz-setup">
+      <h3 style="margin-bottom:12px;font-size:.9rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;">Modus</h3>
+      <div class="quiz-option-grid" style="margin-bottom:24px;">
+        <button class="quiz-option-btn active" data-mode="flashcard">
+          <div class="qob-title"><svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg> Karteikarten</div>
+          <div class="qob-desc">Karte anklicken, Formel aufdecken, selbst bewerten.</div>
+        </button>
+        <button class="quiz-option-btn" data-mode="rearrange">
+          <div class="qob-title"><svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="1,4 1,10 7,10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg> Umformungs-Quiz</div>
+          <div class="qob-desc">Richtige Umformung aus 4 Antworten wählen.</div>
+        </button>
+      </div>
+      <h3 style="margin-bottom:12px;font-size:.9rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;">Formelauswahl</h3>
+      <div class="quiz-option-grid">
+        <button class="quiz-option-btn active" data-source="all">
+          <div class="qob-title"><svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg> Alle Formeln</div>
+          <div class="qob-desc">Alle verfügbaren Formeln.</div>
+        </button>
+        <button class="quiz-option-btn" data-source="fav">
+          <div class="qob-title"><svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/></svg> Nur Favoriten</div>
+          <div class="qob-desc">Nur deine gespeicherten Formeln.</div>
+        </button>
+      </div>
+      <div id="quiz-folder-picker" style="margin-top:24px;display:none;"></div>
+      <div style="margin-top:28px;">
+        <button class="start-quiz-btn" id="start-quiz-btn">Quiz starten</button>
+      </div>
+    </div>
+
+    <div id="quiz-runner" style="display:none;">
+      <div class="quiz-card-wrap">
+        <div class="quiz-progress">
+          <span id="progress-text">1 / 60</span>
+          <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+          <button onclick="restartQuiz()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.8rem;">✕</button>
+        </div>
+        <div class="quiz-card" id="quiz-card"></div>
+        <div id="quiz-actions"></div>
+      </div>
+    </div>
+
+    <div id="quiz-result" style="display:none;" class="quiz-result">
+      <div class="result-score" id="result-score">0%</div>
+      <div class="result-label" id="result-label"></div>
+      <div class="result-stats">
+        <div class="rs-item"><span class="rs-num good" id="result-know">0</span><span class="rs-label">Gewusst</span></div>
+        <div class="rs-item"><span class="rs-num mid"  id="result-unsure">0</span><span class="rs-label">Fast</span></div>
+        <div class="rs-item"><span class="rs-num bad"  id="result-dontknow">0</span><span class="rs-label">Nicht gewusst</span></div>
+      </div>
+      <button class="restart-btn" onclick="restartQuiz()">Nochmal versuchen</button>
+    </div>
+
+  </section>
+
+  <!-- SETTINGS -->
+  <section id="view-settings" class="view">
+    <div class="page-header">
+      <div class="page-title">Einstellungen</div>
+      <div class="page-sub">App-Einstellungen anpassen</div>
+    </div>
+    <div class="settings-wrap">
+
+      <div class="settings-group">
+        <div class="settings-group-title">Design</div>
+        <div class="settings-row">
+          <div>
+            <div class="settings-label">Farbmodus</div>
+            <div class="settings-desc">Dunkel- oder Hellmodus</div>
+          </div>
+          <div class="settings-control theme-toggle">
+            <button class="theme-btn" data-theme="dark"><svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg> Dunkel</button>
+            <button class="theme-btn" data-theme="light"><svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg> Hell</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ Lehrberuf & Lehrjahr Filter ══ -->
+      <div class="settings-group">
+        <div class="settings-group-title">Lehrberuf</div>
+        <div class="settings-row settings-row-col">
+          <div class="settings-desc" style="margin-bottom:10px">
+            Nur Formeln für deinen Lehrberuf anzeigen
+          </div>
+          <div class="filter-chip-group">
+            <button class="filter-beruf-btn filter-chip" data-beruf="alle">Alle</button>
+            <button class="filter-beruf-btn filter-chip" data-beruf="automatiker"><svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg> Automatiker</button>
+            <button class="filter-beruf-btn filter-chip" data-beruf="elektroniker"><svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="13,2 3,14 12,14 11,22 21,10 12,10 13,2"/></svg> Elektroniker</button>
+            <button class="filter-beruf-btn filter-chip" data-beruf="polymechaniker"><svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg> Polymechaniker</button>
+            <button class="filter-beruf-btn filter-chip" data-beruf="informatiker"><svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg> Informatiker</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-group">
+        <div class="settings-group-title">Lehrjahr</div>
+        <div class="settings-row settings-row-col">
+          <div class="settings-desc" style="margin-bottom:10px">
+            Kumulativ: Jahr 3 zeigt Formeln aus LJ 1 + 2 + 3
+          </div>
+          <div class="filter-chip-group">
+            <button class="filter-lj-btn filter-chip" data-lj="0">Alle Jahre</button>
+            <button class="filter-lj-btn filter-chip" data-lj="1">1. Lehrjahr</button>
+            <button class="filter-lj-btn filter-chip" data-lj="2">2. Lehrjahr</button>
+            <button class="filter-lj-btn filter-chip" data-lj="3">3. Lehrjahr</button>
+            <button class="filter-lj-btn filter-chip" data-lj="4">4. Lehrjahr</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-group">
+        <div class="settings-group-title">Rechner</div>
+        <div class="settings-row">
+          <div>
+            <div class="settings-label">Signifikante Stellen</div>
+            <div class="settings-desc">Anzahl Stellen im Ergebnis</div>
+          </div>
+          <div class="settings-control">
+            <select id="sigfigs-select" class="settings-select">
+              <option value="2">2 Stellen</option>
+              <option value="3" selected>3 Stellen</option>
+              <option value="4">4 Stellen</option>
+              <option value="5">5 Stellen</option>
+              <option value="6">6 Stellen</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+
+    </div>
+
+    <!-- Admin-Bereich (nur für dich sichtbar) -->
+    <div id="admin-section" class="hidden">
+      <div class="admin-section-header">
+        <div class="admin-section-title">Neue Formeln prüfen</div>
+        <div class="admin-section-sub">Eingereichte Formeln bestätigen oder ablehnen</div>
+      </div>
+      <div id="admin-panel" class="admin-panel"></div>
+    </div>
+
+    <!-- Über die App -->
+    <div class="about-section">
+      <div class="about-inner">
+        <div class="about-logo">Formel++</div>
+        <div class="about-sub">Physik · Mathematik · Elektrotechnik</div>
+        <div class="about-sep">· · ·</div>
+        <div class="about-credits">Created by <strong>Jeron, Nils, Teodora &amp; Leonie</strong></div>
+        <div class="about-version">Version 1.0 · 2026</div>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- SCAN -->
+  <section id="view-scan" class="view">
+    <div class="page-header">
+      <div class="page-title">Formel-Scan</div>
+      <div class="page-sub">Foto aufnehmen — Formel wird automatisch erkannt</div>
+    </div>
+    <div class="scan-wrap" id="scan-wrap"></div>
+  </section>
+
+</main>
+
+<script src="formeln-data.js"></script>
+<script src="materialien.js"></script>
+<script src="supabase-config.js"></script>
+<script src="app.js"></script>
+<script>
+  // Service Worker registrieren (PWA)
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+  }
+</script>
+</body>
+</html>

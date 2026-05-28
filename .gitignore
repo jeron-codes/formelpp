@@ -1,0 +1,13 @@
+# Installer-Dateien
+*.exe
+*.msi
+
+# Claude-interne Einstellungen
+.claude/
+
+# Betriebssystem-Dateien
+.DS_Store
+Thumbs.db
+
+# Alter Projektordner (falls vorhanden)
+Formel++/

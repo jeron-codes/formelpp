@@ -1,0 +1,18 @@
+{
+  "name": "Formel++",
+  "short_name": "Formel++",
+  "description": "Formelsammlung für Physik, Mathematik und Elektrotechnik – für die Lehre",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#07071A",
+  "theme_color": "#07071A",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
