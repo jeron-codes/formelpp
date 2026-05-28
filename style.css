@@ -904,6 +904,16 @@ body.light-mode .calc-material-sel {
   transition: border-color .15s;
 }
 .auth-form input:focus { border-color: var(--accent); }
+.remember-row { margin-top: 14px; }
+.remember-label {
+  display: flex; align-items: center; gap: 8px;
+  font-size: .82rem; color: var(--muted); cursor: pointer;
+  user-select: none;
+}
+.remember-label input[type="checkbox"] {
+  width: 15px; height: 15px; cursor: pointer;
+  accent-color: var(--accent);
+}
 .auth-submit {
   width: 100%; margin-top: 20px; padding: 12px;
   background: linear-gradient(135deg, var(--accent), #9333EA);

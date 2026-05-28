@@ -127,6 +127,16 @@ async function initSupabase() {
 
   supabaseReady = true;
 
+  // "Nicht merken" — Session löschen wenn neue Browser-Session
+  if (localStorage.getItem('formelpp_no_remember') && !sessionStorage.getItem('formelpp_active')) {
+    await sb.auth.signOut();
+    cacheUserLocally(null);
+  }
+  sessionStorage.setItem('formelpp_active', '1');
+
+  // Sofort-App-Anzeige wenn cached user vorhanden (verhindert Login-Screen-Flash)
+  if (getCachedUser() && !localStorage.getItem('formelpp_no_remember')) showApp();
+
   // Auth state listener
   sb.auth.onAuthStateChange(async (event, session) => {
     currentUser = session?.user ?? null;
@@ -266,12 +276,15 @@ function clearAuthErrors() {
 async function handleLogin(e) {
   e.preventDefault();
   clearAuthErrors();
-  const email = document.getElementById('login-email').value.trim();
-  const pw    = document.getElementById('login-pw').value;
+  const email      = document.getElementById('login-email').value.trim();
+  const pw         = document.getElementById('login-pw').value;
+  const rememberMe = document.getElementById('login-remember')?.checked ?? true;
   setAuthLoading('form-login', true);
   const { error } = await sb.auth.signInWithPassword({ email, password: pw });
   setAuthLoading('form-login', false);
   if (error) { showAuthError('form-login', error.message); return; }
+  if (rememberMe) localStorage.removeItem('formelpp_no_remember');
+  else            localStorage.setItem('formelpp_no_remember', '1');
   hideAuthModal();
 }
 
@@ -291,6 +304,7 @@ async function handleLogout() {
   await sb.auth.signOut();
   cacheUserLocally(null);               // Offline-Cache löschen
   localStorage.removeItem('fav_cache'); // Favoriten-Cache löschen
+  localStorage.removeItem('formelpp_no_remember'); // Remember-Me Präferenz zurücksetzen
   favorites = new Set();
   buildFavorites();
   if (currentFormula) updateFavBtn(currentFormula.id);
