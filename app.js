@@ -959,6 +959,9 @@ function showView(id) {
   document.querySelectorAll('nav a').forEach(a =>
     a.classList.toggle('active', a.dataset.view === id));
   currentView = id;
+  // Scroll zurücksetzen (wichtig auf Mobile mit overflow-y: auto)
+  const main = document.getElementById('main');
+  if (main) main.scrollTop = 0;
 }
 
 // ── Home ─────────────────────────────────────────────────────────────
@@ -1006,10 +1009,20 @@ function renderFormulaList(formulas, title) {
       card.innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;">
           <span class="fc-name">${f.name}</span>
-          <span class="badge ${catClass}" style="margin-left:8px;flex-shrink:0;">${f.sub}</span>
+          <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+            <button class="fc-fav-btn${favorites.has(f.id) ? ' active' : ''}" data-id="${f.id}" title="Favorit">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/></svg>
+            </button>
+            <span class="badge ${catClass}">${f.sub}</span>
+          </div>
         </div>
         <div class="fc-latex tex display" data-tex="${escTex(f.forms[f.def])}"></div>
       `;
+      card.querySelector('.fc-fav-btn').addEventListener('click', e => {
+        e.stopPropagation();
+        toggleFav(f.id);
+        e.currentTarget.classList.toggle('active');
+      });
       card.addEventListener('click', () => openFormula(f.id));
       list.appendChild(card);
     });
@@ -1174,53 +1187,27 @@ function buildCalculator() {
         if (matSel.value !== '') {
           input.value = matSel.value;
           input.classList.add('material-filled');
-          customInp.value = '';                 // eigenes Feld leeren
-          customInp.classList.add('hidden');    // eigenes Feld ausblenden
           computeResult();
         } else {
+          input.value = '';
           input.classList.remove('material-filled');
-        }
-      });
-
-      // ── + Button: eigener Wert ────────────────────────────────────
-      const addBtn = document.createElement('button');
-      addBtn.type    = 'button';
-      addBtn.className = 'calc-material-add-btn';
-      addBtn.title   = 'Eigenen Wert eingeben';
-      addBtn.textContent = '+';
-
-      const customInp = document.createElement('input');
-      customInp.type        = 'number';
-      customInp.className   = 'calc-material-custom hidden';
-      customInp.placeholder = 'Eigener Wert…';
-
-      addBtn.addEventListener('click', () => {
-        customInp.classList.toggle('hidden');
-        if (!customInp.classList.contains('hidden')) {
-          customInp.focus();
-          matSel.value = '';          // Material-Auswahl zurücksetzen
-        }
-      });
-
-      customInp.addEventListener('input', () => {
-        const val = customInp.value.trim();
-        if (val !== '' && !isNaN(parseFloat(val))) {
-          input.value = val;
-          input.classList.add('material-filled');
           computeResult();
         }
       });
 
-      // Enter schliesst das eigene Eingabefeld wieder
-      customInp.addEventListener('keydown', e => {
-        if (e.key === 'Enter') customInp.classList.add('hidden');
-      });
+      // Wenn Nutzer direkt ins Eingabefeld tippt, Material-Auswahl zurücksetzen
+      input.addEventListener('input', () => {
+        if (input.value === '') {
+          input.classList.remove('material-filled');
+        } else {
+          matSel.value = '';   // Dropdown-Selektion aufheben
+          input.classList.add('material-filled');
+        }
+      }, true);
 
       matRow.appendChild(matIcon);
       matRow.appendChild(matLbl);
       matRow.appendChild(matSel);
-      matRow.appendChild(addBtn);
-      matRow.appendChild(customInp);
 
       // Wrap both the input row and material row in a group
       const varGroup = document.createElement('div');

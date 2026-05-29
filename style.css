@@ -308,6 +308,18 @@ nav a.active .nav-icon { opacity: 1; }
 .formula-card .fc-sub  { font-size: .75rem; color: var(--muted); margin-bottom: 10px; }
 .formula-card .fc-latex { font-size: .88rem; }
 
+/* Fav-Button auf Formelkarten */
+.fc-fav-btn {
+  background: none; border: none; cursor: pointer;
+  color: var(--muted); padding: 2px 4px; border-radius: 4px;
+  display: flex; align-items: center; transition: color .15s;
+  line-height: 0;
+}
+.fc-fav-btn svg { width: 15px; height: 15px; }
+.fc-fav-btn:hover  { color: #FBBF24; }
+.fc-fav-btn.active { color: #FBBF24; }
+.fc-fav-btn.active svg { fill: #FBBF24; }
+
 /* ── Detail ───────────────────────────────────────── */
 .detail-topbar { display: flex; align-items: center; gap: 12px; padding: 28px 40px 16px; }
 .detail-name { font-size: 1.6rem; font-weight: 800; padding: 0 40px 4px; }
