@@ -143,11 +143,15 @@ async function initSupabase() {
     updateAuthUI();
     if (currentUser) {
       cacheUserLocally(currentUser);        // für Offline-Sessions speichern
-      await loadFavoritesFromDB();
-      await loadApprovedFormulas();
+      // Nur bei echtem Login/Session-Start laden — nicht bei Token-Refresh
+      // (Token-Refresh würde sonst lokale Favoriten-Änderungen überschreiben)
+      if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+        await loadFavoritesFromDB();
+        await loadApprovedFormulas();
+        checkOnboarding();
+        checkPendingCount();
+      }
       showApp();
-      checkOnboarding();
-      checkPendingCount();
     } else {
       // Kein aktiver Login — prüfen ob offline mit gespeicherter Session
       const cached = getCachedUser();
