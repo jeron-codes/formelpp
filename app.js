@@ -125,24 +125,15 @@ async function initSupabase() {
 
   supabaseReady = true;
 
-  // "Nicht merken" — Session löschen wenn neue Browser-Session
-  if (localStorage.getItem('formelpp_no_remember') && !sessionStorage.getItem('formelpp_active')) {
-    await sb.auth.signOut();
-    cacheUserLocally(null);
-  }
-  sessionStorage.setItem('formelpp_active', '1');
-
-  // App sofort anzeigen — Login ist optional, kein Pflicht-Gate
-  showApp();
+  // Cached user sofort anzeigen (verhindert Login-Screen-Flash beim App-Start)
+  if (getCachedUser()) showApp();
 
   // Auth state listener
   sb.auth.onAuthStateChange(async (event, session) => {
     currentUser = session?.user ?? null;
     updateAuthUI();
     if (currentUser) {
-      cacheUserLocally(currentUser);        // für Offline-Sessions speichern
-      // Nur bei echtem Login/Session-Start laden — nicht bei Token-Refresh
-      // (Token-Refresh würde sonst lokale Favoriten-Änderungen überschreiben)
+      cacheUserLocally(currentUser);
       if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
         await loadFavoritesFromDB();
         await loadApprovedFormulas();
@@ -151,19 +142,18 @@ async function initSupabase() {
       }
       showApp();
     } else {
-      // Kein aktiver Login — prüfen ob offline mit gespeicherter Session
+      // Kein Login — prüfen ob offline mit gespeicherter Session
       const cached = getCachedUser();
       if (!navigator.onLine && cached) {
-        // Offline + vorher eingeloggt → App mit lokalen Daten zeigen
         currentUser = cached;
         favorites = new Set(JSON.parse(localStorage.getItem('fav_cache') || '[]'));
         updateAuthUI();
         showApp();
         buildFavorites();
       } else {
-        cacheUserLocally(null);             // Cache löschen bei echtem Logout
+        cacheUserLocally(null);
         favorites = new Set(JSON.parse(localStorage.getItem('fav') || '[]'));
-        showApp();  // App bleibt offen — Login ist optional
+        showStartScreen();
       }
     }
     buildFavorites();
@@ -285,8 +275,6 @@ async function handleLogin(e) {
   try {
     const { error } = await sb.auth.signInWithPassword({ email, password: pw });
     if (error) { showAuthError('form-login', error.message); return; }
-    if (rememberMe) localStorage.removeItem('formelpp_no_remember');
-    else            localStorage.setItem('formelpp_no_remember', '1');
     hideAuthModal();
   } catch (err) {
     showAuthError('form-login', 'Verbindungsfehler — bitte nochmals versuchen.');
@@ -314,13 +302,12 @@ async function handleSignup(e) {
 
 async function handleLogout() {
   await sb.auth.signOut();
-  cacheUserLocally(null);               // Offline-Cache löschen
-  localStorage.removeItem('fav_cache'); // Favoriten-Cache löschen
-  localStorage.removeItem('formelpp_no_remember'); // Remember-Me Präferenz zurücksetzen
+  cacheUserLocally(null);
+  localStorage.removeItem('fav_cache');
   favorites = new Set();
   buildFavorites();
   if (currentFormula) updateFavBtn(currentFormula.id);
-  showApp(); // App bleibt offen nach Logout
+  showStartScreen();
 }
 
 // ── Theme ──────────────────────────────────────────────────────────
@@ -1969,6 +1956,10 @@ function buildFolderBtn(formulaId) {
 
 // ── Init ───────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
+
+  // Alte "Nicht merken"-Einstellung löschen (war fehlerhaft und sperrte Nutzer aus)
+  localStorage.removeItem('formelpp_no_remember');
+  sessionStorage.removeItem('formelpp_active');
 
   // Category cards
   document.getElementById('cat-physik').onclick     = () => browseCategory('Physik');
