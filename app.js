@@ -134,13 +134,13 @@ async function initSupabase() {
     updateAuthUI();
     if (currentUser) {
       cacheUserLocally(currentUser);
+      showApp(); // Sofort anzeigen — nicht auf Datenbankabfragen warten
       if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
-        await loadFavoritesFromDB();
-        await loadApprovedFormulas();
+        loadFavoritesFromDB();    // Im Hintergrund laden
+        loadApprovedFormulas();   // Im Hintergrund laden
         checkOnboarding();
         checkPendingCount();
       }
-      showApp();
     } else {
       // Kein Login — prüfen ob offline mit gespeicherter Session
       const cached = getCachedUser();
