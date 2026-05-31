@@ -16,8 +16,6 @@ let quizResults    = { know: 0, unsure: 0, dontknow: 0 };
 let supabaseReady  = false;
 let sigFigs        = parseInt(localStorage.getItem('sigFigs') || '3');
 let currentTheme   = localStorage.getItem('theme') || 'dark';
-let _scanImageDataUrl    = null;
-let _lastScannedFormula  = null;
 
 // ── SVG Pictogram constants (small 14px for buttons, large for standalone icons) ──
 const IC = {
@@ -570,264 +568,147 @@ function loadCustomFormulas() {
   }
 }
 
-// ── Scan (Kamera / Foto) ───────────────────────────────────────────
+// ── Eigene Formel hinzufügen ───────────────────────────────────────
 function buildScan() {
   const wrap = document.getElementById('scan-wrap');
-  _scanImageDataUrl   = null;
-  _lastScannedFormula = null;
-
-  // Scan braucht Internet (Edge Function läuft auf Supabase-Server)
-  if (!navigator.onLine) {
-    wrap.innerHTML = `
-      <div class="scan-offline">
-        <div class="scan-offline-icon">${IC.signal48}</div>
-        <div class="scan-offline-title">Scan nicht verfügbar</div>
-        <div class="scan-offline-sub">Du bist offline. Verbinde dich mit dem Internet um Formeln mit der KI zu scannen.</div>
-      </div>`;
-    return;
-  }
-
   wrap.innerHTML = `
-    <input type="file" id="scan-file-input"   accept="image/*"                       style="display:none">
-    <input type="file" id="scan-camera-input" accept="image/*" capture="environment" style="display:none">
-    <div class="scan-dropzone" id="scan-dropzone">
-      <div class="scan-dropzone-icon">${IC.cam48}</div>
-      <div class="scan-dropzone-title">Formel fotografieren</div>
-      <div class="scan-dropzone-sub">Richte die Kamera auf eine handgeschriebene oder gedruckte Formel — die KI erkennt sie automatisch</div>
-      <div class="scan-dropzone-btns">
-        <button class="scan-upload-btn" id="scan-camera-btn">${IC.camera} Foto aufnehmen</button>
-        <button class="scan-camera-btn" id="scan-file-btn">${IC.upload} Bild wählen</button>
+    <div class="af-form">
+      <div class="af-field">
+        <label class="af-label">Formelname *</label>
+        <input type="text" class="af-input" id="af-name" placeholder="z.B. Ohmsches Gesetz" autocomplete="off">
       </div>
+      <div class="af-row">
+        <div class="af-field">
+          <label class="af-label">Kategorie</label>
+          <select class="af-input" id="af-cat">
+            <option value="Mathematik">Mathematik</option>
+            <option value="Physik">Physik</option>
+            <option value="Elektrotechnik">Elektrotechnik</option>
+          </select>
+        </div>
+        <div class="af-field">
+          <label class="af-label">Unterkategorie</label>
+          <input type="text" class="af-input" id="af-sub" placeholder="z.B. Kinematik" autocomplete="off">
+        </div>
+      </div>
+      <div class="af-field">
+        <label class="af-label">Formel (LaTeX) *
+          <a class="af-latex-help" href="https://katex.org/docs/supported.html" target="_blank" rel="noopener">LaTeX-Hilfe ↗</a>
+        </label>
+        <input type="text" class="af-input af-latex-input" id="af-latex"
+          placeholder="z.B. v = \\frac{s}{t}"
+          autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+        <div class="af-preview" id="af-preview">
+          <span class="af-preview-hint">Vorschau erscheint beim Tippen…</span>
+        </div>
+      </div>
+      <div class="af-field">
+        <label class="af-label">Beschreibung <span class="af-optional">(optional)</span></label>
+        <input type="text" class="af-input" id="af-desc" placeholder="Kurze Beschreibung der Formel" autocomplete="off">
+      </div>
+      <div class="af-field">
+        <label class="af-label">Variablen <span class="af-optional">(optional)</span></label>
+        <div id="af-vars-list" class="af-vars-list"></div>
+        <button type="button" class="af-add-var-btn" id="af-add-var-btn">${IC.plus} Variable hinzufügen</button>
+      </div>
+      <div class="af-error hidden" id="af-error"></div>
+      <button type="button" class="af-save-btn" id="af-save-btn">${IC.check} Formel speichern</button>
     </div>`;
 
-  document.getElementById('scan-camera-btn').onclick = () =>
-    document.getElementById('scan-camera-input').click();
-  document.getElementById('scan-file-btn').onclick = () =>
-    document.getElementById('scan-file-input').click();
-  document.getElementById('scan-file-input').onchange   = e => _handleImageSelect(e.target.files[0]);
-  document.getElementById('scan-camera-input').onchange = e => _handleImageSelect(e.target.files[0]);
-}
-
-function _handleImageSelect(file) {
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => {
-    _scanImageDataUrl = e.target.result;
-    _renderScanPreview();
-  };
-  reader.readAsDataURL(file);
-}
-
-function _renderScanPreview() {
-  const wrap = document.getElementById('scan-wrap');
-  wrap.innerHTML = `
-    <div class="scan-preview-wrap">
-      <img class="scan-preview-img" src="${_scanImageDataUrl}" alt="Vorschau">
-    </div>
-    <div class="scan-btn-row">
-      <button class="scan-recognize-btn" id="scan-recognize-btn">${IC.search} Formel erkennen</button>
-      <button class="scan-reset-btn"     id="scan-reset-btn">↩ Neues Bild</button>
-    </div>
-    <div id="scan-result-area"></div>`;
-  document.getElementById('scan-recognize-btn').onclick = _runRecognition;
-  document.getElementById('scan-reset-btn').onclick     = buildScan;
-}
-
-async function _runRecognition() {
-  if (!_scanImageDataUrl) return;
-
-  const btn = document.getElementById('scan-recognize-btn');
-  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Erkenne …'; }
-
-  try {
-    const result = await _callGeminiVision(_scanImageDataUrl);
-    _lastScannedFormula = result;
-    if (result?.valid) {
-      _showScanResult(result, _findFormulaMatch(result));
-    } else {
-      _showScanError('Keine Formel erkannt. Versuche es mit einem klareren Bild.');
+  // Live LaTeX-Vorschau
+  const latexInp = document.getElementById('af-latex');
+  const preview  = document.getElementById('af-preview');
+  latexInp.addEventListener('input', () => {
+    const val = latexInp.value.trim();
+    if (!val) {
+      preview.innerHTML = '<span class="af-preview-hint">Vorschau erscheint beim Tippen…</span>';
+      return;
     }
-  } catch (err) {
-    _showScanError('Fehler bei der Erkennung: ' + (err.message || 'Unbekannter Fehler'));
-  }
-}
-
-// Ruft die Supabase Edge Function auf — der Gemini-Key liegt nur auf dem Server
-async function _callGeminiVision(imageDataUrl) {
-  const [meta, base64] = imageDataUrl.split(',');
-  const mimeType = meta.replace('data:', '').replace(';base64', '');
-
-  // Aktuellen Auth-Token holen (eingeloggte Nutzer)
-  const { data: { session } } = await sb.auth.getSession();
-  const token = session?.access_token || SUPABASE_ANON_KEY;
-
-  const resp = await fetch(`${SUPABASE_URL}/functions/v1/gemini-scan`, {
-    method:  'POST',
-    headers: {
-      'Content-Type':  'application/json',
-      'Authorization': `Bearer ${token}`,
-      'apikey':        SUPABASE_ANON_KEY
-    },
-    body: JSON.stringify({ mimeType, base64 })
+    try {
+      katex.render(val, preview, { throwOnError: true, displayMode: true });
+    } catch (_) {
+      preview.innerHTML = '<span class="af-preview-err">Ungültiger LaTeX-Code</span>';
+    }
   });
 
-  if (!resp.ok) {
-    const err = await resp.json().catch(() => ({}));
-    throw new Error(err?.error || `HTTP ${resp.status}`);
-  }
-  const result = await resp.json();
-  if (result.error) throw new Error(result.error);
-  return result;
-}
-
-function _findFormulaMatch(result) {
-  if (!result?.name) return null;
-  const needle = result.name.toLowerCase();
-  return FORMULAS.find(f => {
-    if (f.name.toLowerCase() === needle) return true;
-    if (f.name.toLowerCase().includes(needle) || needle.includes(f.name.toLowerCase())) return true;
-    if (result.latex && Object.values(f.forms).some(v => v === result.latex)) return true;
-    return false;
-  }) || null;
-}
-
-function _showScanResult(result, match) {
-  const area = document.getElementById('scan-result-area');
-  if (!area) return;
-
-  if (match) {
-    area.innerHTML = `
-      <div class="scan-found-banner">${IC.check} Formel bereits vorhanden!</div>
-      <div class="scan-result-card">
-        <div class="scan-result-name">${match.name}</div>
-        <div class="scan-result-meta">
-          <span class="badge ${catToClass(match.category)}">${match.category}</span>
-          <span style="color:var(--muted);font-size:.8rem;margin-left:6px;">${match.sub}</span>
-        </div>
-        <div id="scan-found-latex" class="scan-result-latex"></div>
-      </div>
-      <div class="scan-btn-row">
-        <button class="scan-action-primary" id="scan-open-btn">→ Formel öffnen</button>
-        <button class="scan-reset-btn"      id="scan-new-btn2">Neues Bild</button>
-      </div>`;
-    const latexDiv = document.getElementById('scan-found-latex');
-    try { katex.render(match.forms[match.def], latexDiv, { throwOnError: false, displayMode: true }); }
-    catch (_) { latexDiv.textContent = match.forms[match.def]; }
-    document.getElementById('scan-open-btn').onclick  = () => openFormula(match.id);
-    document.getElementById('scan-new-btn2').onclick  = buildScan;
-  } else {
-    area.innerHTML = `
-      <div class="scan-new-banner">${IC.plus} Neue Formel erkannt</div>
-      <div class="scan-result-card">
-        <div class="scan-result-name">${result.name || 'Unbekannte Formel'}</div>
-        <div class="scan-result-meta">
-          <span class="badge ${catToClass(result.category || 'Mathematik')}">${result.category || 'Mathematik'}</span>
-          <span style="color:var(--muted);font-size:.8rem;margin-left:6px;">${result.sub || ''}</span>
-        </div>
-        <div id="scan-new-latex" class="scan-result-latex"></div>
-        ${result.desc ? `<div class="scan-result-desc">${result.desc}</div>` : ''}
-      </div>
-      <div class="scan-btn-row">
-        <button class="scan-action-primary" id="scan-add-btn">${IC.plus} Zur Sammlung hinzufügen</button>
-        <button class="scan-reset-btn"      id="scan-new-btn3">Neues Bild</button>
-      </div>`;
-    const latexDiv = document.getElementById('scan-new-latex');
-    if (result.latex) {
-      try { katex.render(result.latex, latexDiv, { throwOnError: false, displayMode: true }); }
-      catch (_) { latexDiv.textContent = result.latex; }
-    } else {
-      latexDiv.textContent = 'Keine LaTeX-Formel erkannt';
-      latexDiv.style.color = 'var(--muted)';
-    }
-    document.getElementById('scan-add-btn').onclick  = _saveScannedFormula;
-    document.getElementById('scan-new-btn3').onclick = buildScan;
-  }
-}
-
-function _showScanError(msg) {
-  const area = document.getElementById('scan-result-area');
-  if (area) area.innerHTML = `
-    <div class="scan-error">
-      <div class="scan-error-icon">${IC.warn32}</div>
-      <div class="scan-error-sub">${msg}</div>
-    </div>`;
-  const btn = document.getElementById('scan-recognize-btn');
-  if (btn) { btn.disabled = false; btn.innerHTML = `${IC.search} Formel erkennen`; }
-}
-
-async function _saveScannedFormula() {
-  if (!_lastScannedFormula?.valid) return;
-  const e = _lastScannedFormula;
-
-  const id         = 'custom_' + Date.now();
-  const vars       = e.vars || {};
-  const defaultVar = Object.keys(vars)[0] || 'x';
-
-  const formula = {
-    id,
-    name:     e.name     || 'Eigene Formel',
-    category: e.category || 'Mathematik',
-    sub:      e.sub      || 'Eigene',
-    desc:     e.desc     || '',
-    vars,
-    forms:  { [defaultVar]: e.latex || '' },
-    def:    defaultVar,
-    custom: true
+  // Variable hinzufügen
+  document.getElementById('af-add-var-btn').onclick = () => {
+    const list = document.getElementById('af-vars-list');
+    const row  = document.createElement('div');
+    row.className = 'af-var-row';
+    row.innerHTML = `
+      <input type="text" class="af-input af-var-sym"  placeholder="Symbol (z.B. v)" autocomplete="off" autocorrect="off" autocapitalize="off">
+      <input type="text" class="af-input af-var-name" placeholder="Bezeichnung (z.B. Geschwindigkeit)" autocomplete="off">
+      <input type="text" class="af-input af-var-unit" placeholder="Einheit (z.B. m/s)" autocomplete="off">
+      <button type="button" class="af-var-del">${IC.x}</button>`;
+    row.querySelector('.af-var-del').onclick = () => row.remove();
+    list.appendChild(row);
+    row.querySelector('.af-var-sym').focus();
   };
 
-  // Add to local runtime immediately (visible to submitter right away)
+  document.getElementById('af-save-btn').onclick = _saveCustomFormula;
+}
+
+function _saveCustomFormula() {
+  const name  = document.getElementById('af-name').value.trim();
+  const latex = document.getElementById('af-latex').value.trim();
+  const cat   = document.getElementById('af-cat').value;
+  const sub   = document.getElementById('af-sub').value.trim() || 'Eigene';
+  const desc  = document.getElementById('af-desc').value.trim();
+  const errEl = document.getElementById('af-error');
+
+  errEl.classList.add('hidden');
+  if (!name)  { errEl.textContent = 'Bitte einen Formelnamen eingeben.';      errEl.classList.remove('hidden'); return; }
+  if (!latex) { errEl.textContent = 'Bitte den LaTeX-Code der Formel eingeben.'; errEl.classList.remove('hidden'); return; }
+
+  // Variablen einlesen
+  const vars = {};
+  document.querySelectorAll('.af-var-row').forEach(row => {
+    const sym = row.querySelector('.af-var-sym').value.trim();
+    if (sym) vars[sym] = {
+      name: row.querySelector('.af-var-name').value.trim() || sym,
+      unit: row.querySelector('.af-var-unit').value.trim() || '–'
+    };
+  });
+  const defaultVar = Object.keys(vars)[0] || 'x';
+  const id = 'custom_' + Date.now();
+
+  const formula = { id, name, category: cat, sub, desc, vars,
+    forms: { [defaultVar]: latex }, def: defaultVar, custom: true };
+
+  // Sofort in Laufzeit einfügen
   FORMULAS.push(formula);
   buildHome();
 
-  // Show loading state while submitting
-  const wrap = document.getElementById('scan-wrap');
-  let submitted = false;
-
-  if (supabaseReady && currentUser) {
-    try {
-      const { error } = await sb.from('pending_formulas').insert({
-        id,
-        name:         formula.name,
-        latex:        e.latex || '',
-        category:     formula.category,
-        sub:          formula.sub,
-        description:  formula.desc,
-        vars:         formula.vars,
-        submitted_by: currentUser.id,
-        status:       'pending'
-      });
-      if (!error) submitted = true;
-    } catch (_) {}
-  }
-
-  // Also save locally as fallback
+  // Lokal speichern
   try {
     const saved = JSON.parse(localStorage.getItem('customFormulas') || '[]');
     saved.push(formula);
     localStorage.setItem('customFormulas', JSON.stringify(saved));
   } catch (_) {}
 
-  // Success message — different text depending on whether it was sent for review
-  const subMsg = submitted
-    ? 'Eingereicht zur Überprüfung — du kannst sie schon verwenden.'
-    : 'Lokal gespeichert (du kannst sie schon verwenden).';
+  // Optional an Supabase senden (zur Überprüfung durch Admin)
+  if (supabaseReady && currentUser) {
+    sb.from('pending_formulas').insert({
+      id, name, latex, category: cat, sub, description: desc,
+      vars, submitted_by: currentUser.id, status: 'pending'
+    }).catch(() => {});
+  }
 
+  // Erfolgsseite
+  const wrap = document.getElementById('scan-wrap');
   wrap.innerHTML = `
-    <div class="scan-preview-wrap" style="margin-bottom:16px;">
-      <img class="scan-preview-img" src="${_scanImageDataUrl}" alt="Vorschau">
-    </div>
-    <div class="scan-success">
+    <div class="scan-success" style="margin-top:32px;">
       <div class="scan-success-icon">${IC.check36}</div>
-      <div class="scan-success-title">«${formula.name}» hinzugefügt!</div>
-      <div class="scan-success-sub">${subMsg}</div>
+      <div class="scan-success-title">«${name}» gespeichert!</div>
+      <div class="scan-success-sub">Formel ist ab sofort in deiner Sammlung verfügbar.</div>
     </div>
-    <div class="scan-btn-row" style="margin-top:14px;">
-      <button class="scan-action-primary" id="scan-goto-new-btn">→ Formel öffnen</button>
-      <button class="scan-reset-btn"      id="scan-new-btn">Neue Formel scannen</button>
+    <div class="scan-btn-row" style="margin-top:20px;">
+      <button class="scan-action-primary" id="af-goto-btn">→ Formel öffnen</button>
+      <button class="scan-reset-btn"      id="af-new-btn">${IC.plus} Weitere Formel hinzufügen</button>
     </div>`;
-
-  document.getElementById('scan-goto-new-btn').onclick = () => openFormula(id);
-  document.getElementById('scan-new-btn').onclick      = buildScan;
+  document.getElementById('af-goto-btn').onclick = () => openFormula(id);
+  document.getElementById('af-new-btn').onclick  = buildScan;
 }
 
 // ── PDF Export ─────────────────────────────────────────────────────
