@@ -1335,33 +1335,34 @@ function updateFavBtn(id) {
 async function toggleFav(id) {
   const isFav = favorites.has(id);
 
-  if (supabaseReady && currentUser && navigator.onLine) {
-    // Online + eingeloggt: Supabase synchronisieren
-    try {
-      if (isFav) {
-        await sb.from('favorites').delete().match({ user_id: currentUser.id, formula_id: id });
-        favorites.delete(id);
-      } else {
-        await sb.from('favorites').insert({ user_id: currentUser.id, formula_id: id });
-        favorites.add(id);
-      }
-    } catch (_) {
-      // API-Fehler: lokal speichern
-      if (isFav) favorites.delete(id);
-      else        favorites.add(id);
-    }
-    localStorage.setItem('fav_cache', JSON.stringify([...favorites]));
-  } else {
-    // Offline oder nicht eingeloggt: lokal speichern
-    if (isFav) favorites.delete(id);
-    else        favorites.add(id);
-    localStorage.setItem('fav_cache', JSON.stringify([...favorites]));
-    localStorage.setItem('fav', JSON.stringify([...favorites]));
-  }
-
+  // Sofort lokal updaten — UI reagiert ohne auf Netzwerk zu warten
+  if (isFav) favorites.delete(id);
+  else       favorites.add(id);
+  localStorage.setItem('fav_cache', JSON.stringify([...favorites]));
+  localStorage.setItem('fav',       JSON.stringify([...favorites]));
   updateFavBtn(id);
   buildFavorites();
   saveFoldersLocal();
+
+  // Supabase im Hintergrund synchronisieren
+  if (supabaseReady && currentUser && navigator.onLine) {
+    try {
+      if (isFav) {
+        await sb.from('favorites').delete().match({ user_id: currentUser.id, formula_id: id });
+      } else {
+        await sb.from('favorites').insert({ user_id: currentUser.id, formula_id: id });
+      }
+      localStorage.setItem('fav_cache', JSON.stringify([...favorites]));
+    } catch (_) {
+      // Rollback bei Netzwerkfehler
+      if (isFav) favorites.add(id);
+      else       favorites.delete(id);
+      localStorage.setItem('fav_cache', JSON.stringify([...favorites]));
+      localStorage.setItem('fav',       JSON.stringify([...favorites]));
+      updateFavBtn(id);
+      buildFavorites();
+    }
+  }
 }
 
 function buildFavorites() {
