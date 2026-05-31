@@ -1086,7 +1086,21 @@ body.light-mode .calc-material-sel {
   transition: border-color .15s; box-sizing: border-box;
 }
 .af-input:focus { border-color: var(--accent); }
-.af-latex-input { font-family: 'Courier New', monospace; font-size: .85rem; }
+.af-formula-input { font-size: .95rem; letter-spacing: .01em; }
+/* Symbol-Buttons */
+.af-sym-grid {
+  display: flex; flex-wrap: wrap; gap: 5px; margin: 8px 0 10px;
+}
+.af-sym-btn {
+  background: var(--surface); border: 1.5px solid var(--border);
+  border-radius: 7px; color: var(--text); cursor: pointer;
+  font-size: .95rem; min-width: 38px; height: 38px; padding: 0 8px;
+  display: flex; align-items: center; justify-content: center;
+  transition: all .12s; font-family: 'Georgia', 'Times New Roman', serif;
+  user-select: none;
+}
+.af-sym-btn:hover  { border-color: var(--accent); color: var(--accent); background: rgba(124,58,237,.08); }
+.af-sym-btn:active { transform: scale(.9); }
 .af-preview {
   margin-top: 10px; padding: 16px; min-height: 56px;
   background: var(--card); border: 1.5px solid var(--border); border-radius: 8px;

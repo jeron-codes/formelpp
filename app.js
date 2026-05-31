@@ -557,6 +557,53 @@ async function buildAdminPanel() {
 }
 
 // ── Custom Formulas (Scan) ─────────────────────────────────────────
+// ── Formel-Text → LaTeX Konverter ─────────────────────────────────
+function textToLatex(text) {
+  let s = text;
+  // Griechische Buchstaben
+  [['alpha','\\alpha'],['beta','\\beta'],['gamma','\\gamma'],['delta','\\delta'],
+   ['epsilon','\\epsilon'],['eta','\\eta'],['theta','\\theta'],['lambda','\\lambda'],
+   ['mu','\\mu'],['nu','\\nu'],['xi','\\xi'],['pi','\\pi'],['rho','\\rho'],
+   ['sigma','\\sigma'],['tau','\\tau'],['phi','\\phi'],['psi','\\psi'],
+   ['omega','\\omega'],['infty','\\infty'],
+   ['Gamma','\\Gamma'],['Delta','\\Delta'],['Theta','\\Theta'],['Lambda','\\Lambda'],
+   ['Sigma','\\Sigma'],['Phi','\\Phi'],['Psi','\\Psi'],['Omega','\\Omega']
+  ].forEach(([n, l]) => { s = s.replace(new RegExp(`\\b${n}\\b`, 'g'), l); });
+  // Funktionen
+  s = s.replace(/sqrt\(([^)]+)\)/g, '\\sqrt{$1}');
+  s = s.replace(/\bsin\(/g,  '\\sin(');
+  s = s.replace(/\bcos\(/g,  '\\cos(');
+  s = s.replace(/\btan\(/g,  '\\tan(');
+  s = s.replace(/\blog\(/g,  '\\log(');
+  s = s.replace(/\bln\(/g,   '\\ln(');
+  // Hochstellungen: x^2 → x^{2}, x^n → x^{n}
+  s = s.replace(/\^(\w+)/g, (_, p) => `^{${p}}`);
+  // Vergleichszeichen
+  s = s.replace(/~=/g, '\\approx ');
+  s = s.replace(/<=/g, '\\leq ');
+  s = s.replace(/>=/g, '\\geq ');
+  s = s.replace(/!=/g, '\\neq ');
+  // Brüche: term/term → \frac{term}{term}
+  s = s.replace(/([a-zA-Z0-9_{}\^\\]+)\s*\/\s*([a-zA-Z0-9_{}\^\\]+)/g, '\\frac{$1}{$2}');
+  // Rechenzeichen
+  s = s.replace(/\*/g, ' \\cdot ');
+  s = s.replace(/·/g,  ' \\cdot ');
+  s = s.replace(/÷/g,  ' \\div ');
+  return s.trim();
+}
+
+// Text an Cursor-Position einfügen
+function insertAtCursor(input, text) {
+  const start = input.selectionStart;
+  const end   = input.selectionEnd;
+  input.value = input.value.slice(0, start) + text + input.value.slice(end);
+  // Bei sqrt() Cursor in die Klammer setzen
+  const pos = text === 'sqrt()' ? start + 5 : start + text.length;
+  input.setSelectionRange(pos, pos);
+  input.dispatchEvent(new Event('input'));
+  input.focus();
+}
+
 function loadCustomFormulas() {
   try {
     const saved = JSON.parse(localStorage.getItem('customFormulas') || '[]');
@@ -569,6 +616,35 @@ function loadCustomFormulas() {
 }
 
 // ── Eigene Formel hinzufügen ───────────────────────────────────────
+const AF_SYMBOLS = [
+  { l:'·',     v:'*',      t:'Mal' },
+  { l:'/',     v:'/',      t:'Geteilt / Bruch' },
+  { l:'²',     v:'^2',     t:'Quadrat' },
+  { l:'³',     v:'^3',     t:'Kubik' },
+  { l:'xⁿ',   v:'^',      t:'Hochstellen' },
+  { l:'√',     v:'sqrt()', t:'Wurzel' },
+  { l:'π',     v:'pi',     t:'Pi' },
+  { l:'α',     v:'alpha',  t:'Alpha' },
+  { l:'β',     v:'beta',   t:'Beta' },
+  { l:'γ',     v:'gamma',  t:'Gamma' },
+  { l:'δ',     v:'delta',  t:'Delta' },
+  { l:'Δ',     v:'Delta',  t:'Delta (gross)' },
+  { l:'λ',     v:'lambda', t:'Lambda' },
+  { l:'μ',     v:'mu',     t:'Mü' },
+  { l:'ω',     v:'omega',  t:'Omega' },
+  { l:'Ω',     v:'Omega',  t:'Omega (gross)' },
+  { l:'η',     v:'eta',    t:'Eta' },
+  { l:'ρ',     v:'rho',    t:'Rho' },
+  { l:'σ',     v:'sigma',  t:'Sigma' },
+  { l:'φ',     v:'phi',    t:'Phi' },
+  { l:'τ',     v:'tau',    t:'Tau' },
+  { l:'≈',     v:'~=',     t:'Ungefähr' },
+  { l:'≤',     v:'<=',     t:'Kleiner gleich' },
+  { l:'≥',     v:'>=',     t:'Grösser gleich' },
+  { l:'≠',     v:'!=',     t:'Ungleich' },
+  { l:'∞',     v:'infty',  t:'Unendlich' },
+];
+
 function buildScan() {
   const wrap = document.getElementById('scan-wrap');
   wrap.innerHTML = `
@@ -592,19 +668,18 @@ function buildScan() {
         </div>
       </div>
       <div class="af-field">
-        <label class="af-label">Formel (LaTeX) *
-          <a class="af-latex-help" href="https://katex.org/docs/supported.html" target="_blank" rel="noopener">LaTeX-Hilfe ↗</a>
-        </label>
-        <input type="text" class="af-input af-latex-input" id="af-latex"
-          placeholder="z.B. v = \\frac{s}{t}"
+        <label class="af-label">Formel *</label>
+        <input type="text" class="af-input af-formula-input" id="af-formula"
+          placeholder="z.B.  v = s/t   oder   F = m*a"
           autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+        <div class="af-sym-grid" id="af-sym-grid"></div>
         <div class="af-preview" id="af-preview">
           <span class="af-preview-hint">Vorschau erscheint beim Tippen…</span>
         </div>
       </div>
       <div class="af-field">
         <label class="af-label">Beschreibung <span class="af-optional">(optional)</span></label>
-        <input type="text" class="af-input" id="af-desc" placeholder="Kurze Beschreibung der Formel" autocomplete="off">
+        <input type="text" class="af-input" id="af-desc" placeholder="Kurze Beschreibung" autocomplete="off">
       </div>
       <div class="af-field">
         <label class="af-label">Variablen <span class="af-optional">(optional)</span></label>
@@ -615,19 +690,31 @@ function buildScan() {
       <button type="button" class="af-save-btn" id="af-save-btn">${IC.check} Formel speichern</button>
     </div>`;
 
-  // Live LaTeX-Vorschau
-  const latexInp = document.getElementById('af-latex');
-  const preview  = document.getElementById('af-preview');
-  latexInp.addEventListener('input', () => {
-    const val = latexInp.value.trim();
-    if (!val) {
-      preview.innerHTML = '<span class="af-preview-hint">Vorschau erscheint beim Tippen…</span>';
-      return;
-    }
+  // Symbol-Buttons aufbauen
+  const grid = document.getElementById('af-sym-grid');
+  AF_SYMBOLS.forEach(({ l, v, t }) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'af-sym-btn';
+    btn.textContent = l;
+    btn.title = t;
+    btn.addEventListener('mousedown', e => {
+      e.preventDefault(); // Fokus im Eingabefeld behalten
+      insertAtCursor(document.getElementById('af-formula'), v);
+    });
+    grid.appendChild(btn);
+  });
+
+  // Live-Vorschau
+  const inp     = document.getElementById('af-formula');
+  const preview = document.getElementById('af-preview');
+  inp.addEventListener('input', () => {
+    const val = inp.value.trim();
+    if (!val) { preview.innerHTML = '<span class="af-preview-hint">Vorschau erscheint beim Tippen…</span>'; return; }
     try {
-      katex.render(val, preview, { throwOnError: true, displayMode: true });
+      katex.render(textToLatex(val), preview, { throwOnError: true, displayMode: true });
     } catch (_) {
-      preview.innerHTML = '<span class="af-preview-err">Ungültiger LaTeX-Code</span>';
+      preview.innerHTML = `<span class="af-preview-hint">${textToLatex(val)}</span>`;
     }
   });
 
@@ -637,9 +724,9 @@ function buildScan() {
     const row  = document.createElement('div');
     row.className = 'af-var-row';
     row.innerHTML = `
-      <input type="text" class="af-input af-var-sym"  placeholder="Symbol (z.B. v)" autocomplete="off" autocorrect="off" autocapitalize="off">
-      <input type="text" class="af-input af-var-name" placeholder="Bezeichnung (z.B. Geschwindigkeit)" autocomplete="off">
-      <input type="text" class="af-input af-var-unit" placeholder="Einheit (z.B. m/s)" autocomplete="off">
+      <input type="text" class="af-input af-var-sym"  placeholder="Symbol (v)" autocomplete="off" autocorrect="off" autocapitalize="off">
+      <input type="text" class="af-input af-var-name" placeholder="Bezeichnung (Geschwindigkeit)" autocomplete="off">
+      <input type="text" class="af-input af-var-unit" placeholder="Einheit (m/s)" autocomplete="off">
       <button type="button" class="af-var-del">${IC.x}</button>`;
     row.querySelector('.af-var-del').onclick = () => row.remove();
     list.appendChild(row);
@@ -650,16 +737,17 @@ function buildScan() {
 }
 
 function _saveCustomFormula() {
-  const name  = document.getElementById('af-name').value.trim();
-  const latex = document.getElementById('af-latex').value.trim();
-  const cat   = document.getElementById('af-cat').value;
-  const sub   = document.getElementById('af-sub').value.trim() || 'Eigene';
-  const desc  = document.getElementById('af-desc').value.trim();
-  const errEl = document.getElementById('af-error');
+  const name    = document.getElementById('af-name').value.trim();
+  const formula = document.getElementById('af-formula').value.trim();
+  const cat     = document.getElementById('af-cat').value;
+  const sub     = document.getElementById('af-sub').value.trim() || 'Eigene';
+  const desc    = document.getElementById('af-desc').value.trim();
+  const errEl   = document.getElementById('af-error');
 
   errEl.classList.add('hidden');
-  if (!name)  { errEl.textContent = 'Bitte einen Formelnamen eingeben.';      errEl.classList.remove('hidden'); return; }
-  if (!latex) { errEl.textContent = 'Bitte den LaTeX-Code der Formel eingeben.'; errEl.classList.remove('hidden'); return; }
+  if (!name)    { errEl.textContent = 'Bitte einen Formelnamen eingeben.'; errEl.classList.remove('hidden'); return; }
+  if (!formula) { errEl.textContent = 'Bitte die Formel eingeben.';        errEl.classList.remove('hidden'); return; }
+  const latex = textToLatex(formula);
 
   // Variablen einlesen
   const vars = {};
