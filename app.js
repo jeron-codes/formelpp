@@ -132,8 +132,8 @@ async function initSupabase() {
   }
   sessionStorage.setItem('formelpp_active', '1');
 
-  // Sofort-App-Anzeige wenn cached user vorhanden (verhindert Login-Screen-Flash)
-  if (getCachedUser() && !localStorage.getItem('formelpp_no_remember')) showApp();
+  // App sofort anzeigen — Login ist optional, kein Pflicht-Gate
+  showApp();
 
   // Auth state listener
   sb.auth.onAuthStateChange(async (event, session) => {
@@ -163,7 +163,7 @@ async function initSupabase() {
       } else {
         cacheUserLocally(null);             // Cache löschen bei echtem Logout
         favorites = new Set(JSON.parse(localStorage.getItem('fav') || '[]'));
-        showStartScreen();
+        showApp();  // App bleibt offen — Login ist optional
       }
     }
     buildFavorites();
@@ -320,7 +320,7 @@ async function handleLogout() {
   favorites = new Set();
   buildFavorites();
   if (currentFormula) updateFavBtn(currentFormula.id);
-  showStartScreen();
+  showApp(); // App bleibt offen nach Logout
 }
 
 // ── Theme ──────────────────────────────────────────────────────────
