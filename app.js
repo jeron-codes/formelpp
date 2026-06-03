@@ -632,10 +632,97 @@ const AF_SYMBOLS = [
   { l:'∞',     v:'infty',  t:'Unendlich' },
 ];
 
+// ── HuggingFace OCR (pix2tex / im2latex) ──────────────────────────
+let _ocrImageFile = null;
+
+async function _recognizeFormulaOCR() {
+  if (!_ocrImageFile) return;
+  const btn    = document.getElementById('af-ocr-btn');
+  const status = document.getElementById('af-ocr-status');
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Erkenne…';
+  status.textContent = '';
+
+  const MODEL = 'naver-clova-ix/donut-base-finetuned-im2latex-140k';
+  const URL   = `https://api-inference.huggingface.co/models/${MODEL}`;
+
+  try {
+    let latex = '';
+    // Bis zu 3 Versuche — Modell braucht beim Kaltstart ~20-30s
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const resp = await fetch(URL, {
+        method: 'POST',
+        headers: { 'Content-Type': _ocrImageFile.type || 'application/octet-stream' },
+        body: _ocrImageFile,
+      });
+
+      if (resp.status === 503) {
+        const data = await resp.json().catch(() => ({}));
+        const wait = Math.ceil(data.estimated_time || 20);
+        status.textContent = `Modell wird gestartet… noch ~${wait}s`;
+        await new Promise(r => setTimeout(r, wait * 1000));
+        continue;
+      }
+
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+      const result = await resp.json();
+      // Verschiedene Antwortformate unterstützen
+      if (Array.isArray(result) && result[0]?.generated_text) latex = result[0].generated_text;
+      else if (result?.generated_text) latex = result.generated_text;
+      else if (typeof result === 'string') latex = result;
+
+      // Donut-Tags entfernen: <s_answer>...</s_answer>
+      latex = latex.replace(/<[^>]+>/g, '').replace(/\\s+/g, ' ').trim();
+      break;
+    }
+
+    if (!latex) throw new Error('Keine Formel erkannt — versuche ein klareres Foto');
+
+    // Ergebnis ins Formelfeld eintragen
+    const inp = document.getElementById('af-formula');
+    inp.value = latex;
+    inp.dispatchEvent(new Event('input'));
+    status.textContent = '✓ Formel erkannt — du kannst sie noch anpassen';
+    status.style.color = 'var(--success)';
+
+  } catch (err) {
+    status.textContent = err.message || 'Fehler bei der Erkennung';
+    status.style.color = 'var(--danger)';
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = `${IC.search} Formel erkennen`;
+  }
+}
+
 function buildScan() {
   const wrap = document.getElementById('scan-wrap');
+  _ocrImageFile = null;
   wrap.innerHTML = `
     <div class="af-form">
+
+      <!-- OCR-Sektion -->
+      <div class="af-ocr-section">
+        <div class="af-label" style="margin-bottom:8px;">Foto scannen <span class="af-optional">(optional — füllt Formel automatisch aus)</span></div>
+        <input type="file" id="af-ocr-file"   accept="image/*"                       style="display:none">
+        <input type="file" id="af-ocr-camera" accept="image/*" capture="environment" style="display:none">
+        <div class="af-ocr-btns" id="af-ocr-btns">
+          <button type="button" class="af-ocr-pick-btn" id="af-ocr-camera-btn">${IC.camera} Foto</button>
+          <button type="button" class="af-ocr-pick-btn" id="af-ocr-gallery-btn">${IC.upload} Galerie</button>
+        </div>
+        <div class="af-ocr-preview-wrap hidden" id="af-ocr-preview-wrap">
+          <img class="af-ocr-img" id="af-ocr-img" src="" alt="Vorschau">
+          <div class="af-ocr-actions">
+            <button type="button" class="af-ocr-recognize-btn" id="af-ocr-btn">${IC.search} Formel erkennen</button>
+            <button type="button" class="af-ocr-reset-btn"     id="af-ocr-reset">↩ Anderes Bild</button>
+          </div>
+          <div class="af-ocr-status" id="af-ocr-status"></div>
+        </div>
+      </div>
+
+      <div class="af-divider"></div>
+
       <div class="af-field">
         <label class="af-label">Formelname *</label>
         <input type="text" class="af-input" id="af-name" placeholder="z.B. Ohmsches Gesetz" autocomplete="off">
@@ -676,6 +763,29 @@ function buildScan() {
       <div class="af-error hidden" id="af-error"></div>
       <button type="button" class="af-save-btn" id="af-save-btn">${IC.check} Formel speichern</button>
     </div>`;
+
+  // Bild-Auswahl
+  const handleFile = file => {
+    if (!file) return;
+    _ocrImageFile = file;
+    document.getElementById('af-ocr-img').src = URL.createObjectURL(file);
+    document.getElementById('af-ocr-preview-wrap').classList.remove('hidden');
+    document.getElementById('af-ocr-btns').classList.add('hidden');
+    document.getElementById('af-ocr-status').textContent = '';
+    document.getElementById('af-ocr-status').style.color = '';
+  };
+  document.getElementById('af-ocr-camera-btn').onclick  = () => document.getElementById('af-ocr-camera').click();
+  document.getElementById('af-ocr-gallery-btn').onclick = () => document.getElementById('af-ocr-file').click();
+  document.getElementById('af-ocr-file').onchange       = e => handleFile(e.target.files[0]);
+  document.getElementById('af-ocr-camera').onchange     = e => handleFile(e.target.files[0]);
+  document.getElementById('af-ocr-btn').onclick         = _recognizeFormulaOCR;
+  document.getElementById('af-ocr-reset').onclick       = () => {
+    _ocrImageFile = null;
+    document.getElementById('af-ocr-preview-wrap').classList.add('hidden');
+    document.getElementById('af-ocr-btns').classList.remove('hidden');
+    document.getElementById('af-ocr-file').value   = '';
+    document.getElementById('af-ocr-camera').value = '';
+  };
 
   // Symbol-Buttons aufbauen
   const grid = document.getElementById('af-sym-grid');

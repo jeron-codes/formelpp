@@ -1069,6 +1069,46 @@ body.light-mode .calc-material-sel {
 
 /* ── Eigene Formel hinzufügen ──────────────────────────── */
 .af-form { max-width: 560px; padding: 0 0 32px; }
+
+/* OCR-Sektion */
+.af-ocr-section {
+  background: var(--surface); border: 1.5px solid var(--border);
+  border-radius: 12px; padding: 16px; margin-bottom: 20px;
+}
+.af-ocr-btns { display: flex; gap: 10px; }
+.af-ocr-pick-btn {
+  flex: 1; padding: 10px; background: var(--card);
+  border: 1.5px solid var(--border); border-radius: 8px;
+  color: var(--text); cursor: pointer; font-size: .88rem;
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  transition: border-color .15s;
+}
+.af-ocr-pick-btn:hover { border-color: var(--accent); color: var(--accent); }
+.af-ocr-preview-wrap { margin-top: 10px; }
+.af-ocr-img {
+  width: 100%; max-height: 200px; object-fit: contain;
+  border-radius: 8px; border: 1px solid var(--border); display: block; margin-bottom: 10px;
+}
+.af-ocr-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.af-ocr-recognize-btn {
+  flex: 1; padding: 10px 16px;
+  background: linear-gradient(135deg, var(--accent), #9333EA);
+  color: #fff; border: none; border-radius: 8px;
+  font-size: .88rem; font-weight: 700; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  transition: opacity .15s;
+}
+.af-ocr-recognize-btn:disabled { opacity: .6; cursor: default; }
+.af-ocr-reset-btn {
+  padding: 10px 14px; background: var(--card);
+  border: 1.5px solid var(--border); border-radius: 8px;
+  color: var(--muted); cursor: pointer; font-size: .84rem; transition: all .15s;
+}
+.af-ocr-reset-btn:hover { border-color: var(--accent); color: var(--text); }
+.af-ocr-status { margin-top: 8px; font-size: .82rem; min-height: 1.2em; }
+.af-divider {
+  border: none; border-top: 1px solid var(--border); margin: 4px 0 20px;
+}
 .af-field { margin-bottom: 18px; }
 .af-row   { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 18px; }
 @media (max-width: 480px) { .af-row { grid-template-columns: 1fr; } }
