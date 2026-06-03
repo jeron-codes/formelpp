@@ -724,17 +724,17 @@ function buildScan() {
 }
 
 function _saveCustomFormula() {
-  const name    = document.getElementById('af-name').value.trim();
-  const formula = document.getElementById('af-formula').value.trim();
-  const cat     = document.getElementById('af-cat').value;
-  const sub     = document.getElementById('af-sub').value.trim() || 'Eigene';
-  const desc    = document.getElementById('af-desc').value.trim();
-  const errEl   = document.getElementById('af-error');
+  const name       = document.getElementById('af-name').value.trim();
+  const formulaTxt = document.getElementById('af-formula').value.trim();
+  const cat        = document.getElementById('af-cat').value;
+  const sub        = document.getElementById('af-sub').value.trim() || 'Eigene';
+  const desc       = document.getElementById('af-desc').value.trim();
+  const errEl      = document.getElementById('af-error');
 
   errEl.classList.add('hidden');
-  if (!name)    { errEl.textContent = 'Bitte einen Formelnamen eingeben.'; errEl.classList.remove('hidden'); return; }
-  if (!formula) { errEl.textContent = 'Bitte die Formel eingeben.';        errEl.classList.remove('hidden'); return; }
-  const latex = textToLatex(formula);
+  if (!name)       { errEl.textContent = 'Bitte einen Formelnamen eingeben.'; errEl.classList.remove('hidden'); return; }
+  if (!formulaTxt) { errEl.textContent = 'Bitte die Formel eingeben.';        errEl.classList.remove('hidden'); return; }
+  const latex = textToLatex(formulaTxt);
 
   // Variablen einlesen
   const vars = {};
