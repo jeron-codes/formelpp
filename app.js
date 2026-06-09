@@ -632,11 +632,23 @@ const AF_SYMBOLS = [
   { l:'∞',     v:'infty',  t:'Unendlich' },
 ];
 
-// ── HuggingFace OCR (pix2tex / im2latex) ──────────────────────────
+// ── HuggingFace OCR — via Supabase Edge Function (Token sicher serverseitig) ──
 let _ocrImageFile = null;
+
+// OCR-Bereich ein-/ausblenden je nach Internetverbindung
+function _updateOCROnlineStatus() {
+  const section    = document.getElementById('af-ocr-section');
+  const offlineMsg = document.getElementById('af-ocr-offline');
+  if (!section) return;
+  const online = navigator.onLine;
+  section.querySelectorAll('button').forEach(b => b.disabled = !online);
+  if (offlineMsg) offlineMsg.classList.toggle('hidden', online);
+}
 
 async function _recognizeFormulaOCR() {
   if (!_ocrImageFile) return;
+  if (!navigator.onLine) return;
+
   const btn    = document.getElementById('af-ocr-btn');
   const status = document.getElementById('af-ocr-status');
 
@@ -644,45 +656,38 @@ async function _recognizeFormulaOCR() {
   btn.innerHTML = '<span class="spinner"></span> Erkenne…';
   status.textContent = '';
 
-  const MODEL = 'naver-clova-ix/donut-base-finetuned-im2latex-140k';
-  const URL   = `https://api-inference.huggingface.co/models/${MODEL}`;
-
   try {
-    let latex = '';
-    // Bis zu 3 Versuche — Modell braucht beim Kaltstart ~20-30s
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const resp = await fetch(URL, {
-        method: 'POST',
-        headers: { 'Content-Type': _ocrImageFile.type || 'application/octet-stream' },
-        body: _ocrImageFile,
-      });
+    // Bild → base64
+    const base64 = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload  = () => resolve(reader.result.split(',')[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(_ocrImageFile);
+    });
 
-      if (resp.status === 503) {
-        const data = await resp.json().catch(() => ({}));
-        const wait = Math.ceil(data.estimated_time || 20);
-        status.textContent = `Modell wird gestartet… noch ~${wait}s`;
-        await new Promise(r => setTimeout(r, wait * 1000));
-        continue;
-      }
+    // Supabase Edge Function aufrufen (Token bleibt serverseitig)
+    const fnUrl = `${SUPABASE_URL}/functions/v1/hf-ocr`;
+    const { data: { session } } = await sb.auth.getSession();
+    const jwt = session?.access_token || SUPABASE_ANON_KEY;
 
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    status.textContent = 'Wird analysiert…';
 
-      const result = await resp.json();
-      // Verschiedene Antwortformate unterstützen
-      if (Array.isArray(result) && result[0]?.generated_text) latex = result[0].generated_text;
-      else if (result?.generated_text) latex = result.generated_text;
-      else if (typeof result === 'string') latex = result;
+    const resp = await fetch(fnUrl, {
+      method:  'POST',
+      headers: {
+        'Authorization': `Bearer ${jwt}`,
+        'Content-Type':  'application/json',
+      },
+      body: JSON.stringify({ base64, mimeType: _ocrImageFile.type || 'image/jpeg' }),
+    });
 
-      // Donut-Tags entfernen: <s_answer>...</s_answer>
-      latex = latex.replace(/<[^>]+>/g, '').replace(/\\s+/g, ' ').trim();
-      break;
-    }
-
-    if (!latex) throw new Error('Keine Formel erkannt — versuche ein klareres Foto');
+    const data = await resp.json();
+    if (!resp.ok || data.error) throw new Error(data.error || `Fehler ${resp.status}`);
+    if (!data.latex)             throw new Error('Keine Formel erkannt — versuche ein klareres Foto');
 
     // Ergebnis ins Formelfeld eintragen
     const inp = document.getElementById('af-formula');
-    inp.value = latex;
+    inp.value = data.latex;
     inp.dispatchEvent(new Event('input'));
     status.textContent = '✓ Formel erkannt — du kannst sie noch anpassen';
     status.style.color = 'var(--success)';
@@ -703,8 +708,11 @@ function buildScan() {
     <div class="af-form">
 
       <!-- OCR-Sektion -->
-      <div class="af-ocr-section">
+      <div class="af-ocr-section" id="af-ocr-section">
         <div class="af-label" style="margin-bottom:8px;">Foto scannen <span class="af-optional">(optional — füllt Formel automatisch aus)</span></div>
+        <div class="af-ocr-offline hidden" id="af-ocr-offline">
+          ${IC.signal48 ? '' : ''}<span style="font-size:1.1rem;">📵</span> Formel-Erkennung benötigt Internet
+        </div>
         <input type="file" id="af-ocr-file"   accept="image/*"                       style="display:none">
         <input type="file" id="af-ocr-camera" accept="image/*" capture="environment" style="display:none">
         <div class="af-ocr-btns" id="af-ocr-btns">
@@ -774,6 +782,7 @@ function buildScan() {
     document.getElementById('af-ocr-status').textContent = '';
     document.getElementById('af-ocr-status').style.color = '';
   };
+  _updateOCROnlineStatus(); // Beim Aufbau sofort prüfen ob online
   document.getElementById('af-ocr-camera-btn').onclick  = () => document.getElementById('af-ocr-camera').click();
   document.getElementById('af-ocr-gallery-btn').onclick = () => document.getElementById('af-ocr-file').click();
   document.getElementById('af-ocr-file').onchange       = e => handleFile(e.target.files[0]);
@@ -2204,6 +2213,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   applyTheme(currentTheme);
   buildHome();
   showView('home');
+
+  // Online/Offline → OCR-Bereich aktualisieren
+  window.addEventListener('online',  () => _updateOCROnlineStatus());
+  window.addEventListener('offline', () => _updateOCROnlineStatus());
 
   // Init Supabase (async, non-blocking for basic usage)
   await initSupabase();

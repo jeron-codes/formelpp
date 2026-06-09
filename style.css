@@ -1095,6 +1095,12 @@ body.light-mode .calc-material-sel {
   background: var(--surface); border: 1.5px solid var(--border);
   border-radius: 12px; padding: 16px; margin-bottom: 20px;
 }
+.af-ocr-offline {
+  background: var(--card); border: 1.5px solid var(--border);
+  border-radius: 8px; padding: 10px 14px; margin-bottom: 12px;
+  color: var(--muted); font-size: .87rem;
+  display: flex; align-items: center; gap: 8px;
+}
 .af-ocr-btns { display: flex; gap: 10px; }
 .af-ocr-pick-btn {
   flex: 1; padding: 10px; background: var(--card);

@@ -1,4 +1,4 @@
-const CACHE = 'formelpp-v36';
+const CACHE = 'formelpp-v37';
 const ASSETS = [
   './index.html', './style.css', './app.js',
   './formeln-data.js', './materialien.js', './supabase-config.js', './icon.svg',
