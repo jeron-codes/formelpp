@@ -2101,10 +2101,72 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('fav-btn').onclick = () =>
     currentFormula && toggleFav(currentFormula.id);
 
-  // Search – nur bei Enter
-  document.getElementById('search-input').addEventListener('keydown', e => {
-    if (e.key === 'Enter')  doSearch(e.target.value);
-    if (e.key === 'Escape') { e.target.value = ''; showView('home'); }
+  // ── Search mit Live-Vorschlägen ──────────────────────────────────
+  const searchInput = document.getElementById('search-input');
+  const searchSugg  = document.getElementById('search-suggestions');
+
+  function buildSuggestions(query) {
+    query = query.trim().toLowerCase();
+    if (!query) { searchSugg.classList.add('hidden'); return; }
+
+    const results = getVisibleFormulas().filter(f => {
+      const hay = [
+        f.name, f.sub, f.cat || f.category || '', f.desc || '',
+        ...Object.keys(f.vars || {}),
+        ...Object.values(f.vars || {}).map(v => v.name)
+      ].join(' ').toLowerCase();
+      return hay.includes(query);
+    }).slice(0, 6);
+
+    if (!results.length) { searchSugg.classList.add('hidden'); return; }
+
+    searchSugg.innerHTML = results.map(f => {
+      const cat      = f.cat || f.category || '';
+      const catClass = cat === 'Physik' ? 'badge-p' : cat === 'Mathematik' ? 'badge-m' : 'badge-e';
+      return `<div class="search-suggestion-item" data-id="${f.id}">
+        <span class="search-suggestion-name">${f.name}</span>
+        <span class="badge ${catClass}">${f.sub}</span>
+      </div>`;
+    }).join('');
+
+    // mousedown statt click — verhindert dass blur die Liste vor dem Klick ausblendet
+    searchSugg.querySelectorAll('.search-suggestion-item').forEach(item => {
+      item.addEventListener('mousedown', e => {
+        e.preventDefault();
+        const formula = FORMULAS.find(f => String(f.id) === item.dataset.id);
+        if (formula) {
+          searchSugg.classList.add('hidden');
+          searchInput.value = '';
+          openFormula(formula.id);
+        }
+      });
+      // Touch-Support für Handy
+      item.addEventListener('touchend', e => {
+        e.preventDefault();
+        const formula = FORMULAS.find(f => String(f.id) === item.dataset.id);
+        if (formula) {
+          searchSugg.classList.add('hidden');
+          searchInput.value = '';
+          openFormula(formula.id);
+        }
+      });
+    });
+    searchSugg.classList.remove('hidden');
+  }
+
+  searchInput.addEventListener('input', e => buildSuggestions(e.target.value));
+  searchInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter')  { searchSugg.classList.add('hidden'); doSearch(searchInput.value); }
+    if (e.key === 'Escape') { searchInput.value = ''; searchSugg.classList.add('hidden'); showView('home'); }
+  });
+  searchInput.addEventListener('blur', () => {
+    // Kurze Verzögerung damit mousedown noch feuern kann
+    setTimeout(() => searchSugg.classList.add('hidden'), 200);
+  });
+
+  document.getElementById('search-btn').addEventListener('click', () => {
+    doSearch(searchInput.value);
+    searchSugg.classList.add('hidden');
   });
 
   // Auth modal
