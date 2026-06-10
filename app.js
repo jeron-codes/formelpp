@@ -779,11 +779,11 @@ async function _recognizeFormulaOCR() {
 
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Erkenne…';
-  status.textContent = 'Lädt OCR-Engine…';
+  status.textContent = 'Analysiere…';
 
   try {
     // Nur die Auswahl ausschneiden, falls vorhanden
-    let source = _ocrImageFile;
+    let sourceBlob = _ocrImageFile;
     if (_ocrCropBox && _ocrCropImg && _ocrCropBox.w > 10 && _ocrCropBox.h > 10) {
       const canvas = document.getElementById('af-crop-canvas');
       const sx = _ocrCropBox.x * (_ocrCropImg.naturalWidth  / canvas.width);
@@ -793,26 +793,35 @@ async function _recognizeFormulaOCR() {
       const cc = document.createElement('canvas');
       cc.width = Math.round(sw); cc.height = Math.round(sh);
       cc.getContext('2d').drawImage(_ocrCropImg, sx, sy, sw, sh, 0, 0, cc.width, cc.height);
-      source = await new Promise(r => cc.toBlob(r, 'image/jpeg', 0.95));
+      sourceBlob = await new Promise(r => cc.toBlob(r, 'image/jpeg', 0.95));
     }
 
-    const worker = await Tesseract.createWorker('eng', 1, {
-      logger: m => {
-        if (m.status === 'recognizing text') {
-          status.textContent = `Erkenne… ${Math.round(m.progress * 100)}%`;
-        }
-      }
+    // Bild → base64
+    const base64 = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload  = () => resolve(reader.result.split(',')[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(sourceBlob);
     });
 
-    const { data: { text } } = await worker.recognize(source);
-    await worker.terminate();
+    status.textContent = 'pix2tex erkennt… (kann 10–20s dauern)';
 
-    if (!text.trim()) throw new Error('Keine Formel erkannt — versuche ein klareres Foto');
+    const fnUrl = `${SUPABASE_URL}/functions/v1/hf-ocr`;
+    const { data: { session } } = await sb.auth.getSession();
+    const jwt = session?.access_token || SUPABASE_ANON_KEY;
 
-    const latex = _advancedConvertToLatex(text);
+    const resp = await fetch(fnUrl, {
+      method:  'POST',
+      headers: { 'Authorization': `Bearer ${jwt}`, 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ base64, mimeType: sourceBlob.type || 'image/jpeg' }),
+    });
+
+    const data = await resp.json();
+    if (!resp.ok || data.error) throw new Error(data.error || `Fehler ${resp.status}`);
+    if (!data.latex) throw new Error('Keine Formel erkannt — versuche ein klareres Foto');
 
     const inp = document.getElementById('af-formula');
-    inp.value = latex;
+    inp.value = data.latex;
     inp.dispatchEvent(new Event('input'));
     status.textContent = '✓ Formel erkannt — du kannst sie noch anpassen';
     status.style.color = 'var(--success)';
