@@ -634,6 +634,8 @@ const AF_SYMBOLS = [
 
 // ── Tesseract OCR — läuft komplett im Browser, kein Server/API-Key nötig ──
 let _ocrImageFile = null;
+let _ocrCropImg   = null; // geladenes Image-Objekt
+let _ocrCropBox   = null; // {x,y,w,h} in Canvas-Koordinaten, null = ganzes Bild
 
 function _updateOCROnlineStatus() {} // Tesseract läuft offline — kein Online-Check nötig
 
@@ -681,6 +683,94 @@ function _advancedConvertToLatex(text) {
   return latex.replace(/\s+/g, ' ').trim();
 }
 
+function _initCropCanvas(file) {
+  const canvas = document.getElementById('af-crop-canvas');
+  if (!canvas) return;
+  _ocrCropBox = null;
+
+  const img = new Image();
+  img.onload = () => {
+    _ocrCropImg = img;
+    const maxW = canvas.parentElement.clientWidth || 360;
+    const scale = Math.min(1, maxW / img.naturalWidth);
+    canvas.width  = Math.round(img.naturalWidth  * scale);
+    canvas.height = Math.round(img.naturalHeight * scale);
+    canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+  };
+  img.src = URL.createObjectURL(file);
+
+  let dragStart = null;
+
+  function getPos(e) {
+    const rect = canvas.getBoundingClientRect();
+    const src  = e.changedTouches?.[0] || e;
+    return {
+      x: Math.round((src.clientX - rect.left) * (canvas.width  / rect.width)),
+      y: Math.round((src.clientY - rect.top)  * (canvas.height / rect.height)),
+    };
+  }
+
+  function drawOverlay() {
+    if (!_ocrCropImg) return;
+    const ctx = canvas.getContext('2d');
+    const cw = canvas.width, ch = canvas.height;
+    ctx.drawImage(_ocrCropImg, 0, 0, cw, ch);
+    if (!_ocrCropBox || _ocrCropBox.w < 5 || _ocrCropBox.h < 5) return;
+    const { x, y, w, h } = _ocrCropBox;
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(0, 0, cw, y);
+    ctx.fillRect(0, y, x, h);
+    ctx.fillRect(x + w, y, cw - x - w, h);
+    ctx.fillRect(0, y + h, cw, ch - y - h);
+    ctx.strokeStyle = '#7c3aed';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, w, h);
+    [[x, y], [x + w, y], [x, y + h], [x + w, y + h]].forEach(([cx, cy]) => {
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(cx - 5, cy - 5, 10, 10);
+      ctx.strokeStyle = '#7c3aed';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(cx - 5, cy - 5, 10, 10);
+    });
+  }
+
+  // Touch-Events (Handy)
+  canvas.addEventListener('touchstart', e => {
+    e.preventDefault();
+    dragStart = getPos(e);
+  }, { passive: false });
+  canvas.addEventListener('touchmove', e => {
+    e.preventDefault();
+    if (!dragStart) return;
+    const cur = getPos(e);
+    _ocrCropBox = { x: Math.min(dragStart.x, cur.x), y: Math.min(dragStart.y, cur.y),
+                    w: Math.abs(cur.x - dragStart.x), h: Math.abs(cur.y - dragStart.y) };
+    drawOverlay();
+  }, { passive: false });
+  canvas.addEventListener('touchend', e => {
+    if (_ocrCropBox && (_ocrCropBox.w < 10 || _ocrCropBox.h < 10)) {
+      _ocrCropBox = null; drawOverlay();
+    }
+    dragStart = null;
+  });
+
+  // Maus-Events (Desktop)
+  canvas.addEventListener('mousedown', e => { dragStart = getPos(e); });
+  canvas.addEventListener('mousemove', e => {
+    if (!dragStart) return;
+    const cur = getPos(e);
+    _ocrCropBox = { x: Math.min(dragStart.x, cur.x), y: Math.min(dragStart.y, cur.y),
+                    w: Math.abs(cur.x - dragStart.x), h: Math.abs(cur.y - dragStart.y) };
+    drawOverlay();
+  });
+  canvas.addEventListener('mouseup', e => {
+    if (_ocrCropBox && (_ocrCropBox.w < 10 || _ocrCropBox.h < 10)) {
+      _ocrCropBox = null; drawOverlay();
+    }
+    dragStart = null;
+  });
+}
+
 async function _recognizeFormulaOCR() {
   if (!_ocrImageFile) return;
 
@@ -692,6 +782,20 @@ async function _recognizeFormulaOCR() {
   status.textContent = 'Lädt OCR-Engine…';
 
   try {
+    // Nur die Auswahl ausschneiden, falls vorhanden
+    let source = _ocrImageFile;
+    if (_ocrCropBox && _ocrCropImg && _ocrCropBox.w > 10 && _ocrCropBox.h > 10) {
+      const canvas = document.getElementById('af-crop-canvas');
+      const sx = _ocrCropBox.x * (_ocrCropImg.naturalWidth  / canvas.width);
+      const sy = _ocrCropBox.y * (_ocrCropImg.naturalHeight / canvas.height);
+      const sw = _ocrCropBox.w * (_ocrCropImg.naturalWidth  / canvas.width);
+      const sh = _ocrCropBox.h * (_ocrCropImg.naturalHeight / canvas.height);
+      const cc = document.createElement('canvas');
+      cc.width = Math.round(sw); cc.height = Math.round(sh);
+      cc.getContext('2d').drawImage(_ocrCropImg, sx, sy, sw, sh, 0, 0, cc.width, cc.height);
+      source = await new Promise(r => cc.toBlob(r, 'image/jpeg', 0.95));
+    }
+
     const worker = await Tesseract.createWorker('eng', 1, {
       logger: m => {
         if (m.status === 'recognizing text') {
@@ -700,7 +804,7 @@ async function _recognizeFormulaOCR() {
       }
     });
 
-    const { data: { text } } = await worker.recognize(_ocrImageFile);
+    const { data: { text } } = await worker.recognize(source);
     await worker.terminate();
 
     if (!text.trim()) throw new Error('Keine Formel erkannt — versuche ein klareres Foto');
@@ -738,7 +842,8 @@ function buildScan() {
           <button type="button" class="af-ocr-pick-btn" id="af-ocr-gallery-btn">${IC.upload} Galerie</button>
         </div>
         <div class="af-ocr-preview-wrap hidden" id="af-ocr-preview-wrap">
-          <img class="af-ocr-img" id="af-ocr-img" src="" alt="Vorschau">
+          <p class="af-crop-hint">Kasten über die Formel ziehen, dann "Formel erkennen"</p>
+          <canvas id="af-crop-canvas" style="max-width:100%;display:block;border-radius:8px;cursor:crosshair;touch-action:none;"></canvas>
           <div class="af-ocr-actions">
             <button type="button" class="af-ocr-recognize-btn" id="af-ocr-btn">${IC.search} Formel erkennen</button>
             <button type="button" class="af-ocr-reset-btn"     id="af-ocr-reset">↩ Anderes Bild</button>
@@ -794,11 +899,13 @@ function buildScan() {
   const handleFile = file => {
     if (!file) return;
     _ocrImageFile = file;
-    document.getElementById('af-ocr-img').src = URL.createObjectURL(file);
+    _ocrCropImg   = null;
+    _ocrCropBox   = null;
     document.getElementById('af-ocr-preview-wrap').classList.remove('hidden');
     document.getElementById('af-ocr-btns').classList.add('hidden');
     document.getElementById('af-ocr-status').textContent = '';
     document.getElementById('af-ocr-status').style.color = '';
+    _initCropCanvas(file);
   };
   _updateOCROnlineStatus(); // Beim Aufbau sofort prüfen ob online
   document.getElementById('af-ocr-camera-btn').onclick  = () => document.getElementById('af-ocr-camera').click();
@@ -808,6 +915,8 @@ function buildScan() {
   document.getElementById('af-ocr-btn').onclick         = _recognizeFormulaOCR;
   document.getElementById('af-ocr-reset').onclick       = () => {
     _ocrImageFile = null;
+    _ocrCropImg   = null;
+    _ocrCropBox   = null;
     document.getElementById('af-ocr-preview-wrap').classList.add('hidden');
     document.getElementById('af-ocr-btns').classList.remove('hidden');
     document.getElementById('af-ocr-file').value   = '';
