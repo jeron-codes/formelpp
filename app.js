@@ -632,62 +632,83 @@ const AF_SYMBOLS = [
   { l:'∞',     v:'infty',  t:'Unendlich' },
 ];
 
-// ── HuggingFace OCR — via Supabase Edge Function (Token sicher serverseitig) ──
+// ── Tesseract OCR — läuft komplett im Browser, kein Server/API-Key nötig ──
 let _ocrImageFile = null;
 
-// OCR-Bereich ein-/ausblenden je nach Internetverbindung
-function _updateOCROnlineStatus() {
-  const section    = document.getElementById('af-ocr-section');
-  const offlineMsg = document.getElementById('af-ocr-offline');
-  if (!section) return;
-  const online = navigator.onLine;
-  section.querySelectorAll('button').forEach(b => b.disabled = !online);
-  if (offlineMsg) offlineMsg.classList.toggle('hidden', online);
+function _updateOCROnlineStatus() {} // Tesseract läuft offline — kein Online-Check nötig
+
+function _advancedConvertToLatex(text) {
+  if (!text) return '';
+  let latex = text.trim();
+
+  latex = latex.replace(/\s*([=<>+\-*/])\s*/g, ' $1 ');
+
+  const greekLetters = {
+    'alpha':'\\alpha','beta':'\\beta','gamma':'\\gamma','delta':'\\delta',
+    'epsilon':'\\epsilon','zeta':'\\zeta','eta':'\\eta','theta':'\\theta',
+    'iota':'\\iota','kappa':'\\kappa','lambda':'\\lambda','mu':'\\mu',
+    'nu':'\\nu','xi':'\\xi','pi':'\\pi','rho':'\\rho','sigma':'\\sigma',
+    'tau':'\\tau','upsilon':'\\upsilon','phi':'\\phi','chi':'\\chi',
+    'psi':'\\psi','omega':'\\omega',
+  };
+  Object.entries(greekLetters).forEach(([word, cmd]) => {
+    latex = latex.replace(new RegExp(`\\b${word}\\b`, 'gi'), cmd);
+  });
+
+  [
+    [/÷/g,'\\div'],[/×/g,'\\times'],[/•/g,'\\cdot'],
+    [/≠/g,'\\neq'],[/≤/g,'\\leq'],[/≥/g,'\\geq'],
+    [/∞/g,'\\infty'],[/±/g,'\\pm'],[/∫/g,'\\int'],
+    [/∑/g,'\\sum'],[/√/g,'\\sqrt'],[/°/g,'^\\circ'],
+  ].forEach(([p, r]) => { latex = latex.replace(p, r); });
+
+  latex = latex.replace(/(\d+)\s*\/\s*(\d+)/g, '\\frac{$1}{$2}');
+  latex = latex.replace(/\(\s*([^)]+)\s*\)\s*\/\s*\(\s*([^)]+)\s*\)/g, '\\frac{$1}{$2}');
+
+  latex = latex.replace(/([a-zA-Z0-9)}\]])\s*\^\s*(\d+)/g, '$1^{$2}');
+  latex = latex.replace(/([a-zA-Z0-9)}\]])\s*\^\s*([a-zA-Z])/g, '$1^{$2}');
+  latex = latex.replace(/([a-zA-Z0-9)}\]])\s*\*\*\s*(\d+)/g, '$1^{$2}');
+
+  latex = latex.replace(/([a-zA-Z])\s*_\s*(\d+)/g, '$1_{$2}');
+  latex = latex.replace(/([a-zA-Z])\s*_\s*([a-zA-Z])/g, '$1_{$2}');
+
+  ['sin','cos','tan','sec','csc','cot','sinh','cosh','tanh',
+   'arcsin','arccos','arctan','log','ln','exp','det','lim'].forEach(fn => {
+    latex = latex.replace(new RegExp(`\\b${fn}\\s*\\(`, 'gi'), `\\${fn}\\left(`);
+  });
+  latex = latex.replace(/\)(?!\\right)/g, '\\right)');
+
+  return latex.replace(/\s+/g, ' ').trim();
 }
 
 async function _recognizeFormulaOCR() {
   if (!_ocrImageFile) return;
-  if (!navigator.onLine) return;
 
   const btn    = document.getElementById('af-ocr-btn');
   const status = document.getElementById('af-ocr-status');
 
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Erkenne…';
-  status.textContent = '';
+  status.textContent = 'Lädt OCR-Engine…';
 
   try {
-    // Bild → base64
-    const base64 = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload  = () => resolve(reader.result.split(',')[1]);
-      reader.onerror = reject;
-      reader.readAsDataURL(_ocrImageFile);
+    const worker = await Tesseract.createWorker('eng', 1, {
+      logger: m => {
+        if (m.status === 'recognizing text') {
+          status.textContent = `Erkenne… ${Math.round(m.progress * 100)}%`;
+        }
+      }
     });
 
-    // Supabase Edge Function aufrufen (Token bleibt serverseitig)
-    const fnUrl = `${SUPABASE_URL}/functions/v1/hf-ocr`;
-    const { data: { session } } = await sb.auth.getSession();
-    const jwt = session?.access_token || SUPABASE_ANON_KEY;
+    const { data: { text } } = await worker.recognize(_ocrImageFile);
+    await worker.terminate();
 
-    status.textContent = 'Wird analysiert…';
+    if (!text.trim()) throw new Error('Keine Formel erkannt — versuche ein klareres Foto');
 
-    const resp = await fetch(fnUrl, {
-      method:  'POST',
-      headers: {
-        'Authorization': `Bearer ${jwt}`,
-        'Content-Type':  'application/json',
-      },
-      body: JSON.stringify({ base64, mimeType: _ocrImageFile.type || 'image/jpeg' }),
-    });
+    const latex = _advancedConvertToLatex(text);
 
-    const data = await resp.json();
-    if (!resp.ok || data.error) throw new Error(data.error || `Fehler ${resp.status}`);
-    if (!data.latex)             throw new Error('Keine Formel erkannt — versuche ein klareres Foto');
-
-    // Ergebnis ins Formelfeld eintragen
     const inp = document.getElementById('af-formula');
-    inp.value = data.latex;
+    inp.value = latex;
     inp.dispatchEvent(new Event('input'));
     status.textContent = '✓ Formel erkannt — du kannst sie noch anpassen';
     status.style.color = 'var(--success)';
@@ -710,9 +731,6 @@ function buildScan() {
       <!-- OCR-Sektion -->
       <div class="af-ocr-section" id="af-ocr-section">
         <div class="af-label" style="margin-bottom:8px;">Foto scannen <span class="af-optional">(optional — füllt Formel automatisch aus)</span></div>
-        <div class="af-ocr-offline hidden" id="af-ocr-offline">
-          ${IC.signal48 ? '' : ''}<span style="font-size:1.1rem;">📵</span> Formel-Erkennung benötigt Internet
-        </div>
         <input type="file" id="af-ocr-file"   accept="image/*"                       style="display:none">
         <input type="file" id="af-ocr-camera" accept="image/*" capture="environment" style="display:none">
         <div class="af-ocr-btns" id="af-ocr-btns">
