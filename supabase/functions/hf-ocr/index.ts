@@ -1,4 +1,4 @@
-// ── pix2tex LaTeX OCR via HuggingFace Space ─────────────────────────────
+// ── pix2tex LaTeX OCR via HuggingFace Space (Gradio 4 API) ───────────────
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 
 const CORS = {
@@ -6,8 +6,7 @@ const CORS = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-// pix2tex Gradio Space API
-const PIX2TEX_API = 'https://lukbl-latex-ocr.hf.space/run/predict'
+const SPACE = 'https://lukbl-latex-ocr.hf.space'
 
 serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
@@ -18,39 +17,68 @@ serve(async (req: Request) => {
     const { base64, mimeType } = await req.json()
     if (!base64 || !mimeType) throw new Error('base64 und mimeType erforderlich')
 
-    // Optionaler HF-Token für schnellere Anfragen
     const hfToken = Deno.env.get('HF_TOKEN')
     const headers: Record<string, string> = { 'Content-Type': 'application/json' }
     if (hfToken) headers['Authorization'] = `Bearer ${hfToken}`
 
-    let latex = ''
+    // ── Schritt 1: Prediction einreichen ─────────────────────────────────
+    const submitResp = await fetch(`${SPACE}/gradio_api/call/predict`, {
+      method:  'POST',
+      headers,
+      body:    JSON.stringify({ data: [`data:${mimeType};base64,${base64}`] }),
+    })
 
-    // Bis zu 3 Versuche (Space kann schlafen und braucht ~20s zum Aufwachen)
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const resp = await fetch(PIX2TEX_API, {
-        method:  'POST',
-        headers,
-        body:    JSON.stringify({
-          data: [`data:${mimeType};base64,${base64}`]
-        }),
-      })
+    if (!submitResp.ok) {
+      const txt = await submitResp.text().catch(() => '')
+      throw new Error(`pix2tex submit HTTP ${submitResp.status}: ${txt.slice(0, 120)}`)
+    }
 
-      if (resp.status === 503) {
-        await new Promise(r => setTimeout(r, 12000))
-        continue
+    const { event_id } = await submitResp.json()
+    if (!event_id) throw new Error('Kein event_id von pix2tex')
+
+    // ── Schritt 2: Ergebnis via SSE-Stream lesen ──────────────────────────
+    const resultResp = await fetch(
+      `${SPACE}/gradio_api/call/predict/${event_id}`,
+      { headers: hfToken ? { 'Authorization': `Bearer ${hfToken}` } : {} }
+    )
+
+    if (!resultResp.ok) {
+      throw new Error(`pix2tex result HTTP ${resultResp.status}`)
+    }
+
+    const reader  = resultResp.body!.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let latex  = ''
+
+    outer: while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+
+      for (const line of buffer.split('\n')) {
+        if (!line.startsWith('data: ')) continue
+        const raw = line.slice(6).trim()
+        if (!raw || raw === 'null') continue
+        try {
+          const parsed = JSON.parse(raw)
+          // Format A: ["latex string"]
+          if (Array.isArray(parsed) && typeof parsed[0] === 'string') {
+            latex = parsed[0].trim(); break outer
+          }
+          // Format B: {"output":{"data":["latex string"]}}
+          if (parsed?.output?.data?.[0]) {
+            latex = String(parsed.output.data[0]).trim(); break outer
+          }
+          // Format C: {"data":["latex string"]}
+          if (parsed?.data?.[0]) {
+            latex = String(parsed.data[0]).trim(); break outer
+          }
+        } catch { /* ignorieren */ }
       }
-
-      if (!resp.ok) {
-        const txt = await resp.text().catch(() => '')
-        throw new Error(`pix2tex HTTP ${resp.status}: ${txt.slice(0, 120)}`)
-      }
-
-      const data = await resp.json()
-      // Gradio-Format: { data: ["latex string"] }
-      if (Array.isArray(data?.data) && data.data[0]) {
-        latex = String(data.data[0]).trim()
-      }
-      break
+      // Buffer auf letzte unvollständige Zeile kürzen
+      const idx = buffer.lastIndexOf('\n')
+      if (idx >= 0) buffer = buffer.slice(idx + 1)
     }
 
     if (!latex) throw new Error('Keine Formel erkannt — versuche ein klareres Foto')
