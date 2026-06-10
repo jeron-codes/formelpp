@@ -782,19 +782,26 @@ async function _recognizeFormulaOCR() {
   status.textContent = 'Analysiere…';
 
   try {
-    // Nur die Auswahl ausschneiden, falls vorhanden
-    let sourceBlob = _ocrImageFile;
+    // Bild ausschneiden (Crop) und auf max. 1200px skalieren
+    const MAX_PX = 1200;
+    const srcImg = _ocrCropImg || await new Promise(res => {
+      const i = new Image(); i.onload = () => res(i);
+      i.src = URL.createObjectURL(_ocrImageFile);
+    });
+    let sx = 0, sy = 0, sw = srcImg.naturalWidth, sh = srcImg.naturalHeight;
     if (_ocrCropBox && _ocrCropImg && _ocrCropBox.w > 10 && _ocrCropBox.h > 10) {
       const canvas = document.getElementById('af-crop-canvas');
-      const sx = _ocrCropBox.x * (_ocrCropImg.naturalWidth  / canvas.width);
-      const sy = _ocrCropBox.y * (_ocrCropImg.naturalHeight / canvas.height);
-      const sw = _ocrCropBox.w * (_ocrCropImg.naturalWidth  / canvas.width);
-      const sh = _ocrCropBox.h * (_ocrCropImg.naturalHeight / canvas.height);
-      const cc = document.createElement('canvas');
-      cc.width = Math.round(sw); cc.height = Math.round(sh);
-      cc.getContext('2d').drawImage(_ocrCropImg, sx, sy, sw, sh, 0, 0, cc.width, cc.height);
-      sourceBlob = await new Promise(r => cc.toBlob(r, 'image/jpeg', 0.95));
+      const scX = srcImg.naturalWidth  / canvas.width;
+      const scY = srcImg.naturalHeight / canvas.height;
+      sx = _ocrCropBox.x * scX; sy = _ocrCropBox.y * scY;
+      sw = _ocrCropBox.w * scX; sh = _ocrCropBox.h * scY;
     }
+    const scale = Math.min(1, MAX_PX / Math.max(sw, sh));
+    const cc = document.createElement('canvas');
+    cc.width  = Math.round(sw * scale);
+    cc.height = Math.round(sh * scale);
+    cc.getContext('2d').drawImage(srcImg, sx, sy, sw, sh, 0, 0, cc.width, cc.height);
+    const sourceBlob = await new Promise(r => cc.toBlob(r, 'image/jpeg', 0.85));
 
     // Bild → base64
     const base64 = await new Promise((resolve, reject) => {
