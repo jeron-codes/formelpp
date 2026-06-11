@@ -811,7 +811,7 @@ async function _recognizeFormulaOCR() {
       const { pipeline } = await import(
         'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3/dist/transformers.min.js'
       );
-      _formulaNetPipe = await pipeline('image-to-text', 'alephpi/FormulaNet', {
+      _formulaNetPipe = await pipeline('image-to-text', 'Xenova/texify', {
         progress_callback: info => {
           if (info.status === 'progress' && info.progress != null)
             status.textContent = `Lade Modell… ${Math.round(info.progress)}%`;
