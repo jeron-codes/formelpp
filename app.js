@@ -632,10 +632,12 @@ const AF_SYMBOLS = [
   { l:'∞',     v:'infty',  t:'Unendlich' },
 ];
 
-// ── Tesseract OCR — läuft komplett im Browser, kein Server/API-Key nötig ──
-let _ocrImageFile = null;
-let _ocrCropImg   = null; // geladenes Image-Objekt
-let _ocrCropBox   = null; // {x,y,w,h} in Canvas-Koordinaten, null = ganzes Bild
+// ── FormulaNet OCR — läuft komplett im Browser, kein Server/API-Key nötig ──
+// Modell wird beim ersten Aufruf einmalig (~100 MB) geladen und danach gecacht.
+let _ocrImageFile      = null;
+let _ocrCropImg        = null; // geladenes Image-Objekt
+let _ocrCropBox        = null; // {x,y,w,h} in Canvas-Koordinaten, null = ganzes Bild
+let _formulaNetPipe    = null; // gecachte Pipeline-Instanz
 
 function _updateOCROnlineStatus() {} // Tesseract läuft offline — kein Online-Check nötig
 
@@ -779,11 +781,10 @@ async function _recognizeFormulaOCR() {
 
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Erkenne…';
-  status.textContent = 'Analysiere…';
 
+  let imageUrl = null;
   try {
-    // Bild ausschneiden (Crop) und auf max. 1200px skalieren
-    const MAX_PX = 1200;
+    // ── Crop + Resize auf max. 800px ─────────────────────────────────────
     const srcImg = _ocrCropImg || await new Promise(res => {
       const i = new Image(); i.onload = () => res(i);
       i.src = URL.createObjectURL(_ocrImageFile);
@@ -796,39 +797,36 @@ async function _recognizeFormulaOCR() {
       sx = _ocrCropBox.x * scX; sy = _ocrCropBox.y * scY;
       sw = _ocrCropBox.w * scX; sh = _ocrCropBox.h * scY;
     }
-    const scale = Math.min(1, MAX_PX / Math.max(sw, sh));
+    const scale = Math.min(1, 800 / Math.max(sw, sh));
     const cc = document.createElement('canvas');
     cc.width  = Math.round(sw * scale);
     cc.height = Math.round(sh * scale);
     cc.getContext('2d').drawImage(srcImg, sx, sy, sw, sh, 0, 0, cc.width, cc.height);
-    const sourceBlob = await new Promise(r => cc.toBlob(r, 'image/jpeg', 0.85));
+    const blob = await new Promise(r => cc.toBlob(r, 'image/jpeg', 0.92));
+    imageUrl = URL.createObjectURL(blob);
 
-    // Bild → base64
-    const base64 = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload  = () => resolve(reader.result.split(',')[1]);
-      reader.onerror = reject;
-      reader.readAsDataURL(sourceBlob);
-    });
+    // ── FormulaNet laden (einmalig, danach gecacht) ───────────────────────
+    if (!_formulaNetPipe) {
+      status.textContent = 'Lade FormulaNet… (einmalig ~100 MB)';
+      const { pipeline } = await import(
+        'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3/dist/transformers.min.js'
+      );
+      _formulaNetPipe = await pipeline('image-to-text', 'alephpi/FormulaNet', {
+        progress_callback: info => {
+          if (info.status === 'progress' && info.progress != null)
+            status.textContent = `Lade Modell… ${Math.round(info.progress)}%`;
+        }
+      });
+    }
 
-    status.textContent = 'pix2tex erkennt… (kann 10–20s dauern)';
+    status.textContent = 'Erkennt Formel…';
+    const result = await _formulaNetPipe(imageUrl);
+    const latex  = result?.[0]?.generated_text?.trim();
 
-    const fnUrl = `${SUPABASE_URL}/functions/v1/hf-ocr`;
-    const { data: { session } } = await sb.auth.getSession();
-    const jwt = session?.access_token || SUPABASE_ANON_KEY;
-
-    const resp = await fetch(fnUrl, {
-      method:  'POST',
-      headers: { 'Authorization': `Bearer ${jwt}`, 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ base64, mimeType: sourceBlob.type || 'image/jpeg' }),
-    });
-
-    const data = await resp.json();
-    if (!resp.ok || data.error) throw new Error(data.error || `Fehler ${resp.status}`);
-    if (!data.latex) throw new Error('Keine Formel erkannt — versuche ein klareres Foto');
+    if (!latex) throw new Error('Keine Formel erkannt — versuche ein klareres Foto');
 
     const inp = document.getElementById('af-formula');
-    inp.value = data.latex;
+    inp.value = latex;
     inp.dispatchEvent(new Event('input'));
     status.textContent = '✓ Formel erkannt — du kannst sie noch anpassen';
     status.style.color = 'var(--success)';
@@ -837,6 +835,7 @@ async function _recognizeFormulaOCR() {
     status.textContent = err.message || 'Fehler bei der Erkennung';
     status.style.color = 'var(--danger)';
   } finally {
+    if (imageUrl) URL.revokeObjectURL(imageUrl);
     btn.disabled = false;
     btn.innerHTML = `${IC.search} Formel erkennen`;
   }
