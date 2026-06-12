@@ -812,6 +812,7 @@ async function _recognizeFormulaOCR() {
         'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3/dist/transformers.min.js'
       );
       _formulaNetPipe = await pipeline('image-to-text', 'Xenova/texify', {
+        dtype: 'q4',   // 4-bit quantisiert → ~50MB statt 200MB (wichtig für Handy)
         progress_callback: info => {
           if (info.status === 'progress' && info.progress != null)
             status.textContent = `Lade Modell… ${Math.round(info.progress)}%`;
