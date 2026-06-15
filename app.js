@@ -41,45 +41,8 @@ const IC = {
   signal48: `<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><line x1="1" y1="1" x2="23" y2="23"/><path d="M16.72 11.06A10.94 10.94 0 0119 12.55"/><path d="M5 12.55a10.94 10.94 0 015.17-2.39"/><path d="M10.71 5.05A16 16 0 0122.56 9"/><path d="M1.42 9a15.91 15.91 0 014.7-2.88"/><path d="M8.53 16.11a6 6 0 016.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>`,
 };
 
-// ── Lehrberuf / Lehrjahr Filter ────────────────────────────────────
-let selectedBeruf    = localStorage.getItem('beruf')    || 'alle';
-let selectedLehrjahr = parseInt(localStorage.getItem('lehrjahr') || '0'); // 0 = alle
-
 function getVisibleFormulas() {
-  return FORMULAS.filter(f => {
-    // Beruf-Filter
-    if (selectedBeruf !== 'alle') {
-      const fb = f.berufe || ['alle'];
-      if (!fb.includes('alle') && !fb.includes(selectedBeruf)) return false;
-    }
-    // Lehrjahr-Filter (kumulativ: zeige nur lehrjahr <= selectedLehrjahr)
-    if (selectedLehrjahr > 0) {
-      const fj = f.lehrjahr || 1;
-      if (fj > selectedLehrjahr) return false;
-    }
-    return true;
-  });
-}
-
-function setBeruf(beruf) {
-  selectedBeruf = beruf;
-  localStorage.setItem('beruf', beruf);
-  refreshFilterUI();
-  buildHome();
-}
-
-function setLehrjahr(jahr) {
-  selectedLehrjahr = jahr;
-  localStorage.setItem('lehrjahr', jahr);
-  refreshFilterUI();
-  buildHome();
-}
-
-function refreshFilterUI() {
-  document.querySelectorAll('.filter-beruf-btn').forEach(btn =>
-    btn.classList.toggle('active', btn.dataset.beruf === selectedBeruf));
-  document.querySelectorAll('.filter-lj-btn').forEach(btn =>
-    btn.classList.toggle('active', parseInt(btn.dataset.lj) === selectedLehrjahr));
+  return FORMULAS;
 }
 
 // ── Unit Conversions ────────────────────────────────────────────────
@@ -398,17 +361,6 @@ function fmtNum(n) {
 
 // ── Settings view ──────────────────────────────────────────────────
 function buildSettings() {
-  // Beruf-Filter Buttons
-  document.querySelectorAll('.filter-beruf-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.beruf === selectedBeruf);
-    btn.onclick = () => setBeruf(btn.dataset.beruf);
-  });
-  // Lehrjahr-Filter Buttons
-  document.querySelectorAll('.filter-lj-btn').forEach(btn => {
-    btn.classList.toggle('active', parseInt(btn.dataset.lj) === selectedLehrjahr);
-    btn.onclick = () => setLehrjahr(parseInt(btn.dataset.lj));
-  });
-
   document.querySelectorAll('.theme-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.theme === currentTheme);
     btn.onclick = () => setTheme(btn.dataset.theme);
