@@ -1066,8 +1066,7 @@ body.light-mode .calc-material-sel {
 .start-content { text-align: center; position: relative; z-index: 1; padding: 20px; }
 .start-title {
   font-size: 4.5rem; font-weight: 900; letter-spacing: -2px; line-height: 1;
-  background: linear-gradient(135deg, var(--math) 0%, var(--accent) 50%, var(--phys) 100%);
-  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+  color: var(--accent);
   margin-bottom: 14px;
 }
 .start-tagline  { font-size: 1.15rem; color: var(--text); margin-bottom: 6px; font-weight: 500; }
