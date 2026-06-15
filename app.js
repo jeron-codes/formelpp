@@ -637,7 +637,6 @@ const AF_SYMBOLS = [
 let _ocrImageFile      = null;
 let _ocrCropImg        = null; // geladenes Image-Objekt
 let _ocrCropBox        = null; // {x,y,w,h} in Canvas-Koordinaten, null = ganzes Bild
-let _formulaNetPipe    = null; // gecachte Pipeline-Instanz
 
 function _updateOCROnlineStatus() {} // Tesseract läuft offline — kein Online-Check nötig
 
@@ -781,10 +780,11 @@ async function _recognizeFormulaOCR() {
 
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Erkenne…';
+  status.textContent = 'Bild wird analysiert…';
+  status.style.color = '';
 
-  let imageUrl = null;
   try {
-    // ── Crop + Resize auf max. 800px ─────────────────────────────────────
+    // ── Crop + Resize auf max. 1200px ────────────────────────────────────
     const srcImg = _ocrCropImg || await new Promise(res => {
       const i = new Image(); i.onload = () => res(i);
       i.src = URL.createObjectURL(_ocrImageFile);
@@ -797,38 +797,58 @@ async function _recognizeFormulaOCR() {
       sx = _ocrCropBox.x * scX; sy = _ocrCropBox.y * scY;
       sw = _ocrCropBox.w * scX; sh = _ocrCropBox.h * scY;
     }
-    const scale = Math.min(1, 800 / Math.max(sw, sh));
+    const scale = Math.min(1, 1200 / Math.max(sw, sh));
     const cc = document.createElement('canvas');
     cc.width  = Math.round(sw * scale);
     cc.height = Math.round(sh * scale);
     cc.getContext('2d').drawImage(srcImg, sx, sy, sw, sh, 0, 0, cc.width, cc.height);
-    const blob = await new Promise(r => cc.toBlob(r, 'image/jpeg', 0.92));
-    imageUrl = URL.createObjectURL(blob);
 
-    // ── FormulaNet laden (einmalig, danach gecacht) ───────────────────────
-    if (!_formulaNetPipe) {
-      status.textContent = 'Lade FormulaNet… (einmalig ~100 MB)';
-      const { pipeline } = await import(
-        'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3/dist/transformers.min.js'
-      );
-      _formulaNetPipe = await pipeline('image-to-text', 'Xenova/texify', {
-        dtype: 'q4',   // 4-bit quantisiert → ~50MB statt 200MB (wichtig für Handy)
-        progress_callback: info => {
-          if (info.status === 'progress' && info.progress != null)
-            status.textContent = `Lade Modell… ${Math.round(info.progress)}%`;
-        }
+    // ── Base64 für Server-Aufruf ──────────────────────────────────────────
+    const dataUrl = cc.toDataURL('image/jpeg', 0.92);
+    const base64  = dataUrl.split(',')[1];
+
+    // ── Gemini-Scan via Supabase Edge Function ────────────────────────────
+    const resp = await fetch(`${SUPABASE_URL}/functions/v1/gemini-scan`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY },
+      body:    JSON.stringify({ mimeType: 'image/jpeg', base64 })
+    });
+
+    const data = await resp.json();
+    if (!resp.ok || data.error) throw new Error(data.error || `HTTP ${resp.status}`);
+    if (!data.valid) throw new Error('Keine Formel erkannt — versuche ein klareres Foto');
+
+    // ── Alle Formularfelder befüllen ──────────────────────────────────────
+    if (data.latex) {
+      const inp = document.getElementById('af-formula');
+      inp.value = data.latex;
+      inp.dispatchEvent(new Event('input'));
+    }
+    if (data.name)     document.getElementById('af-name').value = data.name;
+    if (data.desc)     document.getElementById('af-desc').value = data.desc;
+    if (data.sub)      document.getElementById('af-sub').value  = data.sub;
+    if (data.category) {
+      const sel = document.getElementById('af-cat');
+      for (const opt of sel.options) {
+        if (opt.value === data.category) { sel.value = data.category; break; }
+      }
+    }
+    if (data.vars && typeof data.vars === 'object') {
+      const list = document.getElementById('af-vars-list');
+      list.innerHTML = '';
+      Object.entries(data.vars).forEach(([sym, v]) => {
+        const row = document.createElement('div');
+        row.className = 'af-var-row';
+        row.innerHTML = `
+          <input type="text" class="af-input af-var-sym"  value="${sym}" autocomplete="off" autocorrect="off" autocapitalize="off">
+          <input type="text" class="af-input af-var-name" value="${v?.name || ''}" autocomplete="off">
+          <input type="text" class="af-input af-var-unit" value="${v?.unit || ''}" autocomplete="off">
+          <button type="button" class="af-var-del">${IC.x}</button>`;
+        row.querySelector('.af-var-del').onclick = () => row.remove();
+        list.appendChild(row);
       });
     }
 
-    status.textContent = 'Erkennt Formel…';
-    const result = await _formulaNetPipe(imageUrl);
-    const latex  = result?.[0]?.generated_text?.trim();
-
-    if (!latex) throw new Error('Keine Formel erkannt — versuche ein klareres Foto');
-
-    const inp = document.getElementById('af-formula');
-    inp.value = latex;
-    inp.dispatchEvent(new Event('input'));
     status.textContent = '✓ Formel erkannt — du kannst sie noch anpassen';
     status.style.color = 'var(--success)';
 
@@ -836,7 +856,6 @@ async function _recognizeFormulaOCR() {
     status.textContent = err.message || 'Fehler bei der Erkennung';
     status.style.color = 'var(--danger)';
   } finally {
-    if (imageUrl) URL.revokeObjectURL(imageUrl);
     btn.disabled = false;
     btn.innerHTML = `${IC.search} Formel erkennen`;
   }
