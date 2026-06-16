@@ -585,10 +585,12 @@ const AF_SYMBOLS = [
 ];
 
 // ── FormulaNet OCR — läuft komplett im Browser, kein Server/API-Key nötig ──
-// Modell wird beim ersten Aufruf einmalig (~100 MB) geladen und danach gecacht.
+// Modell wird beim ersten Aufruf einmalig (~255 MB, kleinste verfügbare Quantisierung)
+// geladen und danach vom Browser gecacht — danach auch offline nutzbar.
 let _ocrImageFile      = null;
 let _ocrCropImg        = null; // geladenes Image-Objekt
 let _ocrCropBox        = null; // {x,y,w,h} in Canvas-Koordinaten, null = ganzes Bild
+let _formulaNetPipe    = null; // gecachte Pipeline-Instanz (einmal pro Seitenaufruf)
 
 function _updateOCROnlineStatus() {} // Tesseract läuft offline — kein Online-Check nötig
 
@@ -732,7 +734,7 @@ async function _recognizeFormulaOCR() {
 
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Erkenne…';
-  status.textContent = 'Bild wird analysiert…';
+  status.textContent = 'Bild wird vorbereitet…';
   status.style.color = '';
 
   try {
@@ -754,52 +756,34 @@ async function _recognizeFormulaOCR() {
     cc.width  = Math.round(sw * scale);
     cc.height = Math.round(sh * scale);
     cc.getContext('2d').drawImage(srcImg, sx, sy, sw, sh, 0, 0, cc.width, cc.height);
+    const blob = await new Promise(r => cc.toBlob(r, 'image/jpeg', 0.92));
+    const imageUrl = URL.createObjectURL(blob);
 
-    // ── Base64 für Server-Aufruf ──────────────────────────────────────────
-    const dataUrl = cc.toDataURL('image/jpeg', 0.92);
-    const base64  = dataUrl.split(',')[1];
-
-    // ── Gemini-Scan via Supabase Edge Function ────────────────────────────
-    const resp = await fetch(`${SUPABASE_URL}/functions/v1/gemini-scan`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY },
-      body:    JSON.stringify({ mimeType: 'image/jpeg', base64 })
-    });
-
-    const data = await resp.json();
-    if (!resp.ok || data.error) throw new Error(data.error || `HTTP ${resp.status}`);
-    if (!data.valid) throw new Error('Keine Formel erkannt — versuche ein klareres Foto');
-
-    // ── Alle Formularfelder befüllen ──────────────────────────────────────
-    if (data.latex) {
-      const inp = document.getElementById('af-formula');
-      inp.value = data.latex;
-      inp.dispatchEvent(new Event('input'));
-    }
-    if (data.name)     document.getElementById('af-name').value = data.name;
-    if (data.desc)     document.getElementById('af-desc').value = data.desc;
-    if (data.sub)      document.getElementById('af-sub').value  = data.sub;
-    if (data.category) {
-      const sel = document.getElementById('af-cat');
-      for (const opt of sel.options) {
-        if (opt.value === data.category) { sel.value = data.category; break; }
-      }
-    }
-    if (data.vars && typeof data.vars === 'object') {
-      const list = document.getElementById('af-vars-list');
-      list.innerHTML = '';
-      Object.entries(data.vars).forEach(([sym, v]) => {
-        const row = document.createElement('div');
-        row.className = 'af-var-row';
-        row.innerHTML = `
-          <input type="text" class="af-input af-var-sym"  value="${sym}" autocomplete="off" autocorrect="off" autocapitalize="off">
-          <input type="text" class="af-input af-var-name" value="${v?.name || ''}" autocomplete="off">
-          <input type="text" class="af-input af-var-unit" value="${v?.unit || ''}" autocomplete="off">
-          <button type="button" class="af-var-del">${IC.x}</button>`;
-        row.querySelector('.af-var-del').onclick = () => row.remove();
-        list.appendChild(row);
+    // ── Modell laden (einmalig pro Seitenaufruf, danach vom Browser gecacht) ──
+    if (!_formulaNetPipe) {
+      status.textContent = 'Lade Erkennungsmodell… (einmalig ~255 MB)';
+      const { pipeline } = await import(
+        'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3/dist/transformers.min.js'
+      );
+      _formulaNetPipe = await pipeline('image-to-text', 'Xenova/texify', {
+        dtype: 'q4f16',   // kleinste verfügbare Kombination: Encoder ~44MB + Decoder ~211MB
+        progress_callback: info => {
+          if (info.status === 'progress' && info.progress != null)
+            status.textContent = `Lade Modell… ${Math.round(info.progress)}% (einmalig, danach offline)`;
+        }
       });
     }
+
+    status.textContent = 'Erkennt Formel…';
+    const result = await _formulaNetPipe(imageUrl);
+    URL.revokeObjectURL(imageUrl);
+    const latex = result?.[0]?.generated_text?.trim();
+
+    if (!latex) throw new Error('Keine Formel erkannt — versuche ein klareres Foto');
+
+    const inp = document.getElementById('af-formula');
+    inp.value = latex;
+    inp.dispatchEvent(new Event('input'));
 
     status.textContent = '✓ Formel erkannt — du kannst sie noch anpassen';
     status.style.color = 'var(--success)';
