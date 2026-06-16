@@ -1077,7 +1077,7 @@ body.light-mode .calc-material-sel {
   font-weight: 700; cursor: pointer; transition: all .2s;
 }
 .start-btn.primary {
-  background: linear-gradient(135deg, var(--accent), var(--phys));
+  background: var(--accent);
   color: #fff; border: none; box-shadow: 0 4px 20px rgba(124,111,247,.4);
 }
 .start-btn.primary:hover  { opacity: .9; transform: translateY(-2px); }
