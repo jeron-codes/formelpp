@@ -104,17 +104,23 @@ async function initSupabase() {
         checkOnboarding();
         checkPendingCount();
       }
+    } else if (event === 'SIGNED_OUT') {
+      // Bewusster Logout — Cache löschen und Login-Screen zeigen
+      cacheUserLocally(null);
+      favorites = new Set(JSON.parse(localStorage.getItem('fav') || '[]'));
+      showStartScreen();
     } else {
-      // Kein Login — prüfen ob offline mit gespeicherter Session
+      // Keine aktive Session (z.B. Netzwerkfehler beim Token-Refresh) —
+      // gespeicherte Anmeldung weiter nutzen, egal was navigator.onLine sagt
+      // (das ist unzuverlässig: WLAN ohne echtes Internet meldet trotzdem "online").
       const cached = getCachedUser();
-      if (!navigator.onLine && cached) {
+      if (cached) {
         currentUser = cached;
         favorites = new Set(JSON.parse(localStorage.getItem('fav_cache') || '[]'));
         updateAuthUI();
         showApp();
         buildFavorites();
       } else {
-        cacheUserLocally(null);
         favorites = new Set(JSON.parse(localStorage.getItem('fav') || '[]'));
         showStartScreen();
       }
