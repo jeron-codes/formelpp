@@ -103,6 +103,7 @@ async function initSupabase() {
         loadApprovedFormulas();   // Im Hintergrund laden
         checkOnboarding();
         checkPendingCount();
+        syncPendingData();        // Offline-Änderungen synchronisieren
       }
     } else if (event === 'SIGNED_OUT') {
       // Bewusster Logout — Cache löschen und Login-Screen zeigen
@@ -177,6 +178,63 @@ async function loadFavoritesFromDB() {
     const cached = localStorage.getItem('fav_cache');
     if (cached) favorites = new Set(JSON.parse(cached));
   }
+}
+
+// ── Offline Sync Queue ──────────────────────────────────────────────
+function queueFavChange(action, id) {
+  const queue = JSON.parse(localStorage.getItem('fav_pending_sync') || '[]');
+  const filtered = queue.filter(q => q.id !== id);
+  filtered.push({ action, id });
+  localStorage.setItem('fav_pending_sync', JSON.stringify(filtered));
+}
+
+function removePendingFav(id) {
+  const queue = JSON.parse(localStorage.getItem('fav_pending_sync') || '[]');
+  localStorage.setItem('fav_pending_sync', JSON.stringify(queue.filter(q => q.id !== id)));
+}
+
+async function syncPendingFavorites() {
+  if (!supabaseReady || !currentUser) return;
+  const queue = JSON.parse(localStorage.getItem('fav_pending_sync') || '[]');
+  if (!queue.length) return;
+  const failed = [];
+  for (const { action, id } of queue) {
+    try {
+      if (action === 'remove') {
+        await sb.from('favorites').delete().match({ user_id: currentUser.id, formula_id: id });
+      } else {
+        await sb.from('favorites').upsert(
+          { user_id: currentUser.id, formula_id: id },
+          { onConflict: 'user_id,formula_id', ignoreDuplicates: true }
+        );
+      }
+    } catch (_) {
+      failed.push({ action, id });
+    }
+  }
+  localStorage.setItem('fav_pending_sync', JSON.stringify(failed));
+  if (!failed.length) await loadFavoritesFromDB();
+}
+
+async function syncPendingFormulas() {
+  if (!supabaseReady || !currentUser) return;
+  const pending = JSON.parse(localStorage.getItem('pending_formulas_local') || '[]');
+  if (!pending.length) return;
+  const failed = [];
+  for (const f of pending) {
+    try {
+      await sb.from('pending_formulas').insert(f);
+    } catch (_) {
+      failed.push(f);
+    }
+  }
+  localStorage.setItem('pending_formulas_local', JSON.stringify(failed));
+  if (failed.length < pending.length) checkPendingCount();
+}
+
+async function syncPendingData() {
+  await syncPendingFavorites();
+  await syncPendingFormulas();
 }
 
 // ── Auth UI ────────────────────────────────────────────────────────
@@ -946,7 +1004,7 @@ function buildScan() {
   document.getElementById('af-save-btn').onclick = _saveCustomFormula;
 }
 
-function _saveCustomFormula() {
+async function _saveCustomFormula() {
   const name       = document.getElementById('af-name').value.trim();
   const formulaTxt = document.getElementById('af-formula').value.trim();
   const cat        = document.getElementById('af-cat').value;
@@ -985,12 +1043,21 @@ function _saveCustomFormula() {
     localStorage.setItem('customFormulas', JSON.stringify(saved));
   } catch (_) {}
 
-  // Optional an Supabase senden (zur Überprüfung durch Admin)
-  if (supabaseReady && currentUser) {
-    sb.from('pending_formulas').insert({
-      id, name, latex, category: cat, sub, description: desc,
-      vars, submitted_by: currentUser.id, status: 'pending'
-    }).catch(() => {});
+  // An Supabase senden — bei Fehler oder Offline lokal queuen
+  if (currentUser) {
+    const row = { id, name, latex, category: cat, sub, description: desc,
+                  vars, submitted_by: currentUser.id, status: 'pending' };
+    let submitted = false;
+    if (supabaseReady) {
+      try { await sb.from('pending_formulas').insert(row); submitted = true; } catch (_) {}
+    }
+    if (!submitted) {
+      const local = JSON.parse(localStorage.getItem('pending_formulas_local') || '[]');
+      if (!local.find(f => f.id === id)) {
+        local.push(row);
+        localStorage.setItem('pending_formulas_local', JSON.stringify(local));
+      }
+    }
   }
 
   // Erfolgsseite
@@ -1523,23 +1590,20 @@ async function toggleFav(id) {
   buildFavorites();
   saveFoldersLocal();
 
-  // Supabase im Hintergrund synchronisieren
-  if (supabaseReady && currentUser && navigator.onLine) {
+  // Supabase synchronisieren — bei Fehler in Queue speichern (kein navigator.onLine Check)
+  if (supabaseReady && currentUser) {
     try {
       if (isFav) {
         await sb.from('favorites').delete().match({ user_id: currentUser.id, formula_id: id });
       } else {
-        await sb.from('favorites').insert({ user_id: currentUser.id, formula_id: id });
+        await sb.from('favorites').upsert(
+          { user_id: currentUser.id, formula_id: id },
+          { onConflict: 'user_id,formula_id', ignoreDuplicates: true }
+        );
       }
-      localStorage.setItem('fav_cache', JSON.stringify([...favorites]));
+      removePendingFav(id);
     } catch (_) {
-      // Rollback bei Netzwerkfehler
-      if (isFav) favorites.add(id);
-      else       favorites.delete(id);
-      localStorage.setItem('fav_cache', JSON.stringify([...favorites]));
-      localStorage.setItem('fav',       JSON.stringify([...favorites]));
-      updateFavBtn(id);
-      buildFavorites();
+      queueFavChange(isFav ? 'remove' : 'add', id);
     }
   }
 }
@@ -2319,7 +2383,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   showView('home');
 
   // Online/Offline → OCR-Bereich aktualisieren
-  window.addEventListener('online',  () => _updateOCROnlineStatus());
+  window.addEventListener('online',  () => { _updateOCROnlineStatus(); syncPendingData(); });
   window.addEventListener('offline', () => _updateOCROnlineStatus());
 
   // Init Supabase (async, non-blocking for basic usage)
