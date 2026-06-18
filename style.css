@@ -1680,6 +1680,7 @@ body.light-mode .scan-result-header { background: rgba(0,0,0,.03); }
 }
 
 /* ── Custom formula edit/delete buttons ──────────── */
+#detail-custom-btns { display: flex; gap: 8px; }
 .detail-edit-btn, .detail-del-btn {
   display: flex; align-items: center; gap: 5px;
   padding: 6px 12px; border-radius: 8px; font-size: .8rem;
