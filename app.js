@@ -13,9 +13,14 @@ let quizSource     = 'all';
 let quizFolderID   = null;                 // null = alle / fav; string = Ordner-ID
 let quizFlipped    = false;
 let quizResults    = { know: 0, unsure: 0, dontknow: 0 };
-let supabaseReady  = false;
-let sigFigs        = parseInt(localStorage.getItem('sigFigs') || '3');
-let currentTheme   = localStorage.getItem('theme') || 'dark';
+let supabaseReady       = false;
+let sigFigs             = parseInt(localStorage.getItem('sigFigs') || '3');
+let currentTheme        = localStorage.getItem('theme') || 'dark';
+let _editingFormulaId   = null;  // null = neue Formel, string = Bearbeitungs-ID
+let _calcMode           = 'basic';
+let _calcExpr           = '';
+let _calcLastResult     = '';
+let _calcDeg            = true;
 
 // ── SVG Pictogram constants (small 14px for buttons, large for standalone icons) ──
 const IC = {
@@ -819,8 +824,34 @@ async function _recognizeFormulaOCR() {
     const cc = document.createElement('canvas');
     cc.width  = Math.round(sw * scale);
     cc.height = Math.round(sh * scale);
-    cc.getContext('2d').drawImage(srcImg, sx, sy, sw, sh, 0, 0, cc.width, cc.height);
-    const blob = await new Promise(r => cc.toBlob(r, 'image/jpeg', 0.92));
+    const ctx = cc.getContext('2d');
+
+    // 1. Weisser Hintergrund (wichtig für transparente Bilder)
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, cc.width, cc.height);
+    ctx.drawImage(srcImg, sx, sy, sw, sh, 0, 0, cc.width, cc.height);
+
+    // 2. Bild in Graustufen konvertieren und Kontrast erhöhen
+    const imgData = ctx.getImageData(0, 0, cc.width, cc.height);
+    const d = imgData.data;
+    let sum = 0;
+    const grays = new Uint8Array(cc.width * cc.height);
+    for (let i = 0; i < d.length; i += 4) {
+      const g = Math.round(0.299 * d[i] + 0.587 * d[i+1] + 0.114 * d[i+2]);
+      grays[i >> 2] = g;
+      sum += g;
+    }
+    // Adaptiver Schwellenwert: alles dunkler als 75% des Durchschnitts → schwarz
+    const threshold = (sum / grays.length) * 0.75;
+    for (let i = 0; i < d.length; i += 4) {
+      const v = grays[i >> 2] < threshold ? 0 : 255;
+      d[i] = d[i+1] = d[i+2] = v;
+      d[i+3] = 255;
+    }
+    ctx.putImageData(imgData, 0, 0);
+
+    // 3. PNG für verlustfreie Qualität (kein JPEG-Artefakt)
+    const blob = await new Promise(r => cc.toBlob(r, 'image/png'));
     const imageUrl = URL.createObjectURL(blob);
 
     // ── Modell laden (einmalig pro Seitenaufruf, danach vom Browser gecacht) ──
@@ -861,9 +892,10 @@ async function _recognizeFormulaOCR() {
   }
 }
 
-function buildScan() {
+function buildScan(prefill = null) {
   const wrap = document.getElementById('scan-wrap');
   _ocrImageFile = null;
+  _editingFormulaId = prefill ? prefill.id : null;
   wrap.innerHTML = `
     <div class="af-form">
 
@@ -1002,6 +1034,31 @@ function buildScan() {
   };
 
   document.getElementById('af-save-btn').onclick = _saveCustomFormula;
+
+  // Felder vorausfüllen (Bearbeitungs-Modus)
+  if (prefill) {
+    document.getElementById('af-name').value = prefill.name || '';
+    document.getElementById('af-cat').value  = prefill.category || prefill.cat || 'Mathematik';
+    document.getElementById('af-sub').value  = prefill.sub  || '';
+    document.getElementById('af-desc').value = prefill.desc || '';
+    const formulaVal = prefill.forms?.[prefill.def] || Object.values(prefill.forms || {})[0] || '';
+    const fInp = document.getElementById('af-formula');
+    fInp.value = formulaVal;
+    fInp.dispatchEvent(new Event('input'));
+    const list = document.getElementById('af-vars-list');
+    Object.entries(prefill.vars || {}).forEach(([sym, info]) => {
+      const row = document.createElement('div');
+      row.className = 'af-var-row';
+      row.innerHTML = `
+        <input type="text" class="af-input af-var-sym"  value="${escTex(sym)}"             placeholder="Symbol" autocomplete="off" autocorrect="off" autocapitalize="off">
+        <input type="text" class="af-input af-var-name" value="${escTex(info.name || sym)}" placeholder="Bezeichnung" autocomplete="off">
+        <input type="text" class="af-input af-var-unit" value="${escTex(info.unit || '–')}" placeholder="Einheit" autocomplete="off">
+        <button type="button" class="af-var-del">${IC.x}</button>`;
+      row.querySelector('.af-var-del').onclick = () => row.remove();
+      list.appendChild(row);
+    });
+    document.getElementById('af-save-btn').innerHTML = `${IC.check} Änderungen speichern`;
+  }
 }
 
 async function _saveCustomFormula() {
@@ -1027,19 +1084,30 @@ async function _saveCustomFormula() {
     };
   });
   const defaultVar = Object.keys(vars)[0] || 'x';
-  const id = 'custom_' + Date.now();
+  const isEdit = !!_editingFormulaId;
+  const id     = isEdit ? _editingFormulaId : 'custom_' + Date.now();
 
   const formula = { id, name, category: cat, sub, desc, vars,
     forms: { [defaultVar]: latex }, def: defaultVar, custom: true };
 
-  // Sofort in Laufzeit einfügen
-  FORMULAS.push(formula);
+  // In Laufzeit einfügen / aktualisieren
+  if (isEdit) {
+    const idx = FORMULAS.findIndex(f => f.id === id);
+    if (idx !== -1) FORMULAS[idx] = formula; else FORMULAS.push(formula);
+  } else {
+    FORMULAS.push(formula);
+  }
   buildHome();
 
   // Lokal speichern
   try {
     const saved = JSON.parse(localStorage.getItem('customFormulas') || '[]');
-    saved.push(formula);
+    if (isEdit) {
+      const idx = saved.findIndex(f => f.id === id);
+      if (idx !== -1) saved[idx] = formula; else saved.push(formula);
+    } else {
+      saved.push(formula);
+    }
     localStorage.setItem('customFormulas', JSON.stringify(saved));
   } catch (_) {}
 
@@ -1049,14 +1117,20 @@ async function _saveCustomFormula() {
                   vars, submitted_by: currentUser.id, status: 'pending' };
     let submitted = false;
     if (supabaseReady) {
-      try { await sb.from('pending_formulas').insert(row); submitted = true; } catch (_) {}
+      try {
+        if (isEdit) {
+          await sb.from('pending_formulas').upsert(row, { onConflict: 'id' });
+        } else {
+          await sb.from('pending_formulas').insert(row);
+        }
+        submitted = true;
+      } catch (_) {}
     }
     if (!submitted) {
       const local = JSON.parse(localStorage.getItem('pending_formulas_local') || '[]');
-      if (!local.find(f => f.id === id)) {
-        local.push(row);
-        localStorage.setItem('pending_formulas_local', JSON.stringify(local));
-      }
+      const localIdx = local.findIndex(f => f.id === id);
+      if (localIdx !== -1) local[localIdx] = row; else local.push(row);
+      localStorage.setItem('pending_formulas_local', JSON.stringify(local));
     }
   }
 
@@ -1065,7 +1139,7 @@ async function _saveCustomFormula() {
   wrap.innerHTML = `
     <div class="scan-success" style="margin-top:32px;">
       <div class="scan-success-icon">${IC.check36}</div>
-      <div class="scan-success-title">«${name}» gespeichert!</div>
+      <div class="scan-success-title">«${name}» ${isEdit ? 'aktualisiert!' : 'gespeichert!'}</div>
       <div class="scan-success-sub">Formel ist ab sofort in deiner Sammlung verfügbar.</div>
     </div>
     <div class="scan-btn-row" style="margin-top:20px;">
@@ -1074,6 +1148,39 @@ async function _saveCustomFormula() {
     </div>`;
   document.getElementById('af-goto-btn').onclick = () => openFormula(id);
   document.getElementById('af-new-btn').onclick  = buildScan;
+}
+
+// ── Custom Formula Edit / Delete ───────────────────────────────────
+
+function editCustomFormula(id) {
+  const f = FORMULAS.find(x => x.id === id);
+  if (!f) return;
+  showView('scan');
+  buildScan(f);
+}
+
+function deleteCustomFormula(id) {
+  const f = FORMULAS.find(x => x.id === id);
+  if (!f) return;
+  if (!confirm(`Formel «${f.name}» wirklich löschen?`)) return;
+
+  const idx = FORMULAS.findIndex(x => x.id === id);
+  if (idx !== -1) FORMULAS.splice(idx, 1);
+
+  try {
+    const saved = JSON.parse(localStorage.getItem('customFormulas') || '[]');
+    localStorage.setItem('customFormulas', JSON.stringify(saved.filter(x => x.id !== id)));
+  } catch (_) {}
+
+  favorites.delete(id);
+  try {
+    const favArr = JSON.stringify([...favorites]);
+    localStorage.setItem('fav', favArr);
+    localStorage.setItem('fav_cache', favArr);
+  } catch (_) {}
+
+  buildHome();
+  showView('home');
 }
 
 // ── PDF Export ─────────────────────────────────────────────────────
@@ -1316,6 +1423,18 @@ function openFormula(id) {
     tr.innerHTML = `<td>${sym}</td><td>${info.name}</td><td class="unit-cell">${info.unit}</td>`;
     tbody.appendChild(tr);
   });
+
+  // Edit/Löschen-Buttons für eigene Formeln
+  const customBtns = document.getElementById('detail-custom-btns');
+  if (f.custom) {
+    customBtns.innerHTML = `
+      <button class="detail-edit-btn" id="detail-edit-btn">✎ Bearbeiten</button>
+      <button class="detail-del-btn"  id="detail-del-btn">✕ Löschen</button>`;
+    document.getElementById('detail-edit-btn').onclick = () => editCustomFormula(id);
+    document.getElementById('detail-del-btn').onclick  = () => deleteCustomFormula(id);
+  } else {
+    customBtns.innerHTML = '';
+  }
 
   updateFavBtn(id);
   buildFolderBtn(id);
@@ -2241,6 +2360,134 @@ function buildFolderBtn(formulaId) {
   });
 }
 
+// ── Taschenrechner ─────────────────────────────────────────────────────
+
+function buildCalcView() {
+  const wrap = document.getElementById('calc-view-wrap');
+
+  const basicBtns = [
+    ['C','⌫','%','÷'],
+    ['7','8','9','×'],
+    ['4','5','6','−'],
+    ['1','2','3','+'],
+    ['±','0','.','='],
+  ];
+  const sciBtns = [
+    ['sin(','cos(','tan(','log(','ln('],
+    ['x²','x³','√(','∛(','π'],
+    ['(',')','^','e','!'],
+    ['C','⌫','%','÷','×'],
+    ['7','8','9','−','+'],
+    ['4','5','6','1','2'],
+    ['3','0','.','±','='],
+  ];
+
+  const renderBtns = (rows) => rows.map(row =>
+    row.map(k => {
+      let cls = 'gca-btn';
+      if (k === '=')                                                         cls += ' eq';
+      else if (k === 'C')                                                    cls += ' clr';
+      else if (['+','−','×','÷','^','%'].includes(k))                       cls += ' op';
+      else if (['sin(','cos(','tan(','log(','ln(','x²','x³','√(','∛(','!'].includes(k)) cls += ' fn';
+      else if (['π','e'].includes(k))                                        cls += ' const';
+      const label = k.endsWith('(') ? k.slice(0,-1) : k;
+      return `<button class="${cls}" data-k="${escTex(k)}">${label}</button>`;
+    }).join('')
+  ).join('');
+
+  wrap.innerHTML = `
+    <div class="gca-wrap">
+      <div class="gca-mode-toggle">
+        <button class="gca-mode-btn${_calcMode==='basic'?' active':''}" data-mode="basic">Standard</button>
+        <button class="gca-mode-btn${_calcMode==='sci'?' active':''}"   data-mode="sci">Wissenschaftlich</button>
+        ${_calcMode==='sci' ? `<button class="gca-deg-btn" id="gca-deg-btn">${_calcDeg?'DEG':'RAD'}</button>` : ''}
+      </div>
+      <div class="gca-display">
+        <div class="gca-expr"   id="gca-expr">${_calcExpr || '&nbsp;'}</div>
+        <div class="gca-result" id="gca-result">${_calcLastResult || '0'}</div>
+      </div>
+      <div class="gca-grid ${_calcMode}" id="gca-grid">
+        ${renderBtns(_calcMode === 'basic' ? basicBtns : sciBtns)}
+      </div>
+    </div>`;
+
+  function calcPress(k) {
+    if (k === 'C') {
+      _calcExpr = ''; _calcLastResult = '';
+    } else if (k === '⌫') {
+      _calcExpr = _calcExpr.slice(0, -1);
+    } else if (k === '=') {
+      try {
+        let expr = _calcExpr
+          .replace(/×/g,'*').replace(/÷/g,'/').replace(/−/g,'-')
+          .replace(/π/g,'Math.PI')
+          .replace(/(?<![a-z])e(?![a-z0-9])/g,'Math.E')
+          .replace(/sin\(/g, _calcDeg ? 'Math.sin(Math.PI/180*' : 'Math.sin(')
+          .replace(/cos\(/g, _calcDeg ? 'Math.cos(Math.PI/180*' : 'Math.cos(')
+          .replace(/tan\(/g, _calcDeg ? 'Math.tan(Math.PI/180*' : 'Math.tan(')
+          .replace(/log\(/g,'Math.log10(')
+          .replace(/ln\(/g,'Math.log(')
+          .replace(/√\(/g,'Math.sqrt(')
+          .replace(/∛\(/g,'Math.cbrt(')
+          .replace(/\^/g,'**')
+          .replace(/(\d+(?:\.\d+)?)!/g, (_, n) => {
+            let r=1, x=Math.round(+n); for(let i=2;i<=x;i++) r*=i; return r;
+          });
+        const res = Function('"use strict"; return ' + expr)();
+        _calcLastResult = Number.isFinite(res)
+          ? String(+res.toFixed(10)).replace(/\.?0+$/, '')
+          : 'Fehler';
+        _calcExpr = '';
+      } catch (_) { _calcLastResult = 'Fehler'; }
+    } else if (k === '±') {
+      _calcExpr = _calcExpr.startsWith('-') ? _calcExpr.slice(1) : '-' + _calcExpr;
+    } else if (k === 'x²') { _calcExpr += '^(2)';
+    } else if (k === 'x³') { _calcExpr += '^(3)';
+    } else { _calcExpr += k; }
+    buildCalcView();
+  }
+
+  wrap.querySelectorAll('.gca-btn[data-k]').forEach(btn =>
+    btn.addEventListener('click', () => calcPress(btn.dataset.k))
+  );
+  wrap.querySelectorAll('.gca-mode-btn').forEach(btn =>
+    btn.addEventListener('click', () => { _calcMode = btn.dataset.mode; buildCalcView(); })
+  );
+  document.getElementById('gca-deg-btn')?.addEventListener('click', () => {
+    _calcDeg = !_calcDeg; buildCalcView();
+  });
+}
+
+// ── Passwort zurücksetzen ───────────────────────────────────────────────
+
+async function handleForgotPassword() {
+  const email  = document.getElementById('forgot-email').value.trim();
+  const errEl  = document.getElementById('forgot-error');
+  const succEl = document.getElementById('forgot-success');
+  errEl.classList.add('hidden');
+  succEl.classList.add('hidden');
+
+  if (!email) {
+    errEl.textContent = 'Bitte E-Mail-Adresse eingeben.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  if (!supabaseReady) {
+    errEl.textContent = 'Keine Internetverbindung.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  const { error } = await sb.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin + '/?type=recovery'
+  });
+  if (error) {
+    errEl.textContent = error.message;
+    errEl.classList.remove('hidden');
+  } else {
+    succEl.classList.remove('hidden');
+  }
+}
+
 // ── Init ───────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
 
@@ -2261,6 +2508,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (v === 'quiz')      buildQuizSetup();
       if (v === 'settings')  buildSettings();
       if (v === 'scan')      buildScan();
+      if (v === 'calc')      buildCalcView();
       if (v === 'browse') {
         document.getElementById('browse-title').textContent = 'Alle Formeln';
         renderFormulaList(getVisibleFormulas(), 'Alle Formeln');
@@ -2357,6 +2605,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('form-login').onsubmit  = handleLogin;
   document.getElementById('form-signup').onsubmit = handleSignup;
   document.getElementById('logout-btn').onclick   = handleLogout;
+
+  document.getElementById('forgot-pw-btn').onclick  = () =>
+    document.getElementById('forgot-pw-wrap').classList.toggle('hidden');
+  document.getElementById('forgot-send-btn').onclick = handleForgotPassword;
 
   // Quiz start
   document.getElementById('start-quiz-btn').onclick = startQuiz;

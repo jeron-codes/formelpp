@@ -1653,3 +1653,97 @@ body.light-mode .scan-result-header { background: rgba(0,0,0,.03); }
 @media print {
   body { background: #fff !important; color: #111 !important; }
 }
+
+/* ── Passwort vergessen ───────────────────────────── */
+.remember-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.forgot-pw-link {
+  background: none; border: none; padding: 0;
+  color: var(--accent); font-size: .8rem; cursor: pointer;
+  text-decoration: underline; text-underline-offset: 2px;
+  white-space: nowrap;
+}
+.forgot-pw-wrap {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 12px; border-radius: 10px;
+  background: var(--surface); border: 1px solid var(--border);
+  margin-top: 4px;
+}
+.forgot-pw-wrap input {
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px 12px;
+  color: var(--text); font-size: .9rem; width: 100%;
+}
+
+/* ── Custom formula edit/delete buttons ──────────── */
+.detail-edit-btn, .detail-del-btn {
+  display: flex; align-items: center; gap: 5px;
+  padding: 6px 12px; border-radius: 8px; font-size: .8rem;
+  font-weight: 600; cursor: pointer; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text); transition: .15s;
+}
+.detail-edit-btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+.detail-del-btn:hover  { background: var(--danger);  color: #fff; border-color: var(--danger);  }
+
+/* ── General Calculator ───────────────────────────── */
+.gca-wrap {
+  max-width: 380px; margin: 0 auto;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.gca-mode-toggle {
+  display: flex; gap: 6px; background: var(--surface);
+  border-radius: 10px; padding: 4px;
+}
+.gca-mode-btn {
+  flex: 1; padding: 7px; border: none; border-radius: 7px;
+  background: none; color: var(--muted); font-size: .85rem;
+  font-weight: 600; cursor: pointer; transition: .15s;
+}
+.gca-mode-btn.active {
+  background: var(--accent); color: #fff;
+}
+.gca-display {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; padding: 16px 20px;
+  min-height: 90px; display: flex; flex-direction: column;
+  justify-content: flex-end; align-items: flex-end; gap: 4px;
+}
+.gca-expr {
+  color: var(--muted); font-size: .9rem;
+  word-break: break-all; text-align: right; min-height: 1.2em;
+}
+.gca-result {
+  color: var(--text); font-size: 2.2rem;
+  font-weight: 700; word-break: break-all; text-align: right;
+}
+.gca-grid {
+  display: grid; gap: 8px;
+}
+.gca-grid.basic  { grid-template-columns: repeat(4, 1fr); }
+.gca-grid.sci    { grid-template-columns: repeat(5, 1fr); }
+.gca-btn {
+  padding: 0; height: 58px; border-radius: 12px;
+  border: 1px solid var(--border); background: var(--card);
+  color: var(--text); font-size: 1rem; font-weight: 600;
+  cursor: pointer; transition: .12s; user-select: none;
+}
+.gca-btn:active { transform: scale(.93); }
+.gca-btn.op     { background: var(--surface); color: var(--accent); }
+.gca-btn.eq     { background: var(--accent);  color: #fff; }
+.gca-btn.clr    { background: var(--surface); color: var(--danger);  }
+.gca-btn.fn     { background: var(--surface); color: var(--text); font-size: .82rem; }
+.gca-btn.const  { background: var(--surface); color: var(--phys); }
+.gca-btn.sm     { font-size: .82rem; }
+.gca-deg-row {
+  display: flex; justify-content: flex-end; gap: 6px;
+}
+.gca-deg-btn {
+  padding: 4px 12px; border-radius: 20px; font-size: .75rem;
+  font-weight: 700; border: 1px solid var(--border);
+  background: none; color: var(--muted); cursor: pointer;
+}
+.gca-deg-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }

@@ -114,6 +114,13 @@
           <input type="checkbox" id="login-remember" checked>
           Angemeldet bleiben
         </label>
+        <button type="button" class="forgot-pw-link" id="forgot-pw-btn">Passwort vergessen?</button>
+      </div>
+      <div class="forgot-pw-wrap hidden" id="forgot-pw-wrap">
+        <input type="email" id="forgot-email" placeholder="Deine E-Mail-Adresse">
+        <button type="button" class="auth-submit" id="forgot-send-btn">Reset-Link senden</button>
+        <div class="auth-success hidden" id="forgot-success">E-Mail gesendet — prüfe deinen Posteingang.</div>
+        <div class="auth-error hidden" id="forgot-error"></div>
       </div>
       <div class="auth-error hidden" id="login-error"></div>
       <button type="submit" class="auth-submit">Anmelden</button>
@@ -154,6 +161,10 @@
     <a data-view="favorites">
       <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg>
       Favoriten
+    </a>
+    <a data-view="calc">
+      <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="10" x2="16" y2="10"/><line x1="8" y1="14" x2="12" y2="14"/><line x1="8" y1="18" x2="12" y2="18"/><line x1="15" y1="14" x2="17" y2="16"/><line x1="17" y1="14" x2="15" y2="16"/></svg>
+      Rechner
     </a>
     <a data-view="quiz">
       <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
@@ -258,7 +269,10 @@
   <section id="view-detail" class="view">
     <div class="detail-topbar">
       <button class="back-btn" id="detail-back-btn">← Zurück</button>
-      <button class="fav-btn" id="fav-btn"><svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/></svg> Favorit</button>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <div id="detail-custom-btns"></div>
+        <button class="fav-btn" id="fav-btn"><svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/></svg> Favorit</button>
+      </div>
     </div>
     <div class="detail-name" id="detail-name"></div>
     <div class="detail-sub"  id="detail-sub"></div>
@@ -345,6 +359,14 @@
       <button class="restart-btn" onclick="restartQuiz()">Nochmal versuchen</button>
     </div>
 
+  </section>
+
+  <!-- RECHNER -->
+  <section id="view-calc" class="view">
+    <div class="page-header">
+      <div class="page-title">Rechner</div>
+    </div>
+    <div id="calc-view-wrap"></div>
   </section>
 
   <!-- SETTINGS -->
